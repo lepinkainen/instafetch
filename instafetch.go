@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 )
 
 // InstagramAPI holds all of the data returned by the Instagram media query
@@ -90,8 +91,13 @@ type InstagramAPI struct {
 	Status        string `json:"status"`
 }
 
-func main() {
-	var url = "https://www.instagram.com/lepinkainen/media/"
+// getImages returns images from the given user
+func getImages(userID string, maxID string) InstagramAPI {
+	var url = fmt.Sprintf("https://www.instagram.com/%s/media/", userID)
+
+	if maxID != "" {
+		url = fmt.Sprintf("%s?max_id=%s", url, maxID)
+	}
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -101,8 +107,7 @@ func main() {
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
-		return
+		panic(err.Error())
 	}
 
 	// interface to hold the instagram json
@@ -114,23 +119,36 @@ func main() {
 		panic(err.Error())
 	}
 
+	return response
+}
+
+func main() {
+	var url string
+	userName := "lepinkainen"
+
+	response := getImages(userName, "")
+
 	if response.MoreAvailable {
-		// get more images recursively
-		// String baseURL = "http://instagram.com/" + userID + "/media/?max_id=" + nextMaxID;
+		lastID := response.Items[len(response.Items)-1].ID
+		fmt.Println("Last ID: ", lastID)
+		//response = getImages(userName, lastID)
 	}
 
 	for _, item := range response.Items {
-		// check if it's a video or an images
+		switch item.Type {
+		case "image":
+			url = item.Images.StandardResolution.URL
+			// Fix up the URL to return the full res image
+			// TODO: imageURL = imageURL.replaceAll("\\?ig_cache_key.+$", "");
+			url = strings.Replace(url, "s640x640/", "", -1)
+			url = strings.Replace(url, "scontent.cdninstagram.com/hphotos-", "igcdn-photos-d-a.akamaihd.net/hphotos-ak-", -1)
+		case "video":
+			url = item.Videos.StandardResolution.URL
+		default:
+			fmt.Println("Unknown type: ", item.Type)
+		}
 
-		url = item.Images.StandardResolution.URL
-		// Do some standard replacing to the url
-		/*
-		   imageURL = imageURL.replaceAll("scontent.cdninstagram.com/hphotos-", "igcdn-photos-d-a.akamaihd.net/hphotos-ak-");
-		   imageURL = imageURL.replaceAll("s640x640/", "");
-		   imageURL = imageURL.replaceAll("\\?ig_cache_key.+$", "");
-		*/
-
-		// Add the url to a queue for workers to download
+		// TODO: Add the url to a queue for workers to download
 		fmt.Println(url)
 	}
 
