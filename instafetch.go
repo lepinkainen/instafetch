@@ -2,11 +2,19 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"net/url"
+	"os"
+	"path"
 	"strings"
 )
+
+var userName = flag.String("username", "", "Username to back up")
 
 // InstagramAPI holds all of the data returned by the Instagram media query
 // generated with https://mholt.github.io/json-to-go/
@@ -91,8 +99,14 @@ type InstagramAPI struct {
 	Status        string `json:"status"`
 }
 
-// getImages returns images from the given user
-func getImages(userID string, maxID string) InstagramAPI {
+// DownloadItem contains all data needed to download a file
+type DownloadItem struct {
+	URL    string
+	userID string
+}
+
+// parsePage returns images for the given user
+func parsePage(userID string, maxID string) InstagramAPI {
 	var url = fmt.Sprintf("https://www.instagram.com/%s/media/", userID)
 
 	if maxID != "" {
@@ -122,34 +136,113 @@ func getImages(userID string, maxID string) InstagramAPI {
 	return response
 }
 
-func main() {
-	var url string
-	userName := "lepinkainen"
+func getPages(userName string) []InstagramAPI {
+	var responses []InstagramAPI
 
-	response := getImages(userName, "")
+	// get the first page
+	response := parsePage(userName, "")
+	responses = append(responses, response)
 
-	if response.MoreAvailable {
+	for {
+		// Get last ID on this page
 		lastID := response.Items[len(response.Items)-1].ID
-		fmt.Println("Last ID: ", lastID)
-		//response = getImages(userName, lastID)
-	}
-
-	for _, item := range response.Items {
-		switch item.Type {
-		case "image":
-			url = item.Images.StandardResolution.URL
-			// Fix up the URL to return the full res image
-			// TODO: imageURL = imageURL.replaceAll("\\?ig_cache_key.+$", "");
-			url = strings.Replace(url, "s640x640/", "", -1)
-			url = strings.Replace(url, "scontent.cdninstagram.com/hphotos-", "igcdn-photos-d-a.akamaihd.net/hphotos-ak-", -1)
-		case "video":
-			url = item.Videos.StandardResolution.URL
-		default:
-			fmt.Println("Unknown type: ", item.Type)
+		// fetch next page
+		response = parsePage(userName, lastID)
+		// store current page
+		responses = append(responses, response)
+		// no more pages, stop
+		if !response.MoreAvailable {
+			break
 		}
-
-		// TODO: Add the url to a queue for workers to download
-		fmt.Println(url)
 	}
 
+	log.Println("Pages parsed, count: ", len(responses))
+	return responses
+}
+
+func parseMediaURLs(responses []InstagramAPI, userName string) []DownloadItem {
+
+	var items []DownloadItem
+	var url string
+
+	for _, response := range responses {
+		for _, item := range response.Items {
+			switch item.Type {
+			case "image":
+				url = item.Images.StandardResolution.URL
+				// Fix up the URL to return the full res image
+				// TODO: imageURL = imageURL.replaceAll("\\?ig_cache_key.+$", "");
+				url = strings.Replace(url, "s640x640/", "", -1)
+				url = strings.Replace(url, "scontent.cdninstagram.com/hphotos-", "igcdn-photos-d-a.akamaihd.net/hphotos-ak-", -1)
+			case "video":
+				url = item.Videos.StandardResolution.URL
+			default:
+				fmt.Println("Unknown type: ", item.Type)
+			}
+
+			// TODO: Add the url to a queue for workers to download
+			item := DownloadItem{}
+			item.URL = url
+			item.userID = userName
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func downloadFile(item DownloadItem, outputFolder string) {
+	var filename string
+
+	os.MkdirAll(path.Join(outputFolder, item.userID), 0766)
+
+	url, err := url.Parse(item.URL)
+	if err != nil {
+		panic(err.Error())
+	}
+	tokens := strings.Split(url.Path, "/")
+	filename = tokens[len(tokens)-1]
+
+	filename = path.Join(outputFolder, item.userID, filename)
+
+	// Create output file
+	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
+	out, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	if os.IsExist(err) {
+		log.Println("Already downloaded: ", filename)
+		return
+	}
+	if err != nil {
+		panic(err.Error())
+	}
+	defer out.Close()
+
+	// download the file
+	resp, err := http.Get(item.URL)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer resp.Body.Close()
+
+	// copy file to disk
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		panic(err.Error())
+	}
+	log.Println("Downloaded: ", filename)
+}
+
+func main() {
+	flag.Parse()
+
+	if *userName == "" {
+		fmt.Println("username must be defined")
+		return
+	}
+
+	responses := getPages(*userName)
+	items := parseMediaURLs(responses, *userName)
+
+	for _, item := range items {
+		downloadFile(item, "output")
+	}
 }
