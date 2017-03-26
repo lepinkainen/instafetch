@@ -136,8 +136,11 @@ func parsePage(userID string, maxID string) InstagramAPI {
 	return response
 }
 
-func getPages(userName string) []InstagramAPI {
+func getPages(userName string, c chan<- InstagramAPI) {
+	defer close(c)
+
 	var responses []InstagramAPI
+	var pageCount = 1
 
 	// get the first page
 	response := parsePage(userName, "")
@@ -148,24 +151,30 @@ func getPages(userName string) []InstagramAPI {
 		lastID := response.Items[len(response.Items)-1].ID
 		// fetch next page
 		response = parsePage(userName, lastID)
+
+		pageCount = pageCount + 1
+
+		c <- response
 		// store current page
-		responses = append(responses, response)
+		//responses = append(responses, response)
 		// no more pages, stop
+		log.Println("Got page at ", lastID)
 		if !response.MoreAvailable {
 			break
 		}
 	}
 
-	log.Println("Pages parsed, count: ", len(responses))
-	return responses
+	log.Println("Pages parsed, count: ", pageCount)
+	//return responses
 }
 
-func parseMediaURLs(responses []InstagramAPI, userName string) []DownloadItem {
+// Takes an InstagramAPI response and parses images it finds to DownloadItems
+func parseMediaURLs(userName string, in <-chan InstagramAPI, out chan<- DownloadItem) {
+	defer close(out)
 
-	var items []DownloadItem
 	var url string
 
-	for _, response := range responses {
+	for response := range in {
 		for _, item := range response.Items {
 			switch item.Type {
 			case "image":
@@ -180,16 +189,24 @@ func parseMediaURLs(responses []InstagramAPI, userName string) []DownloadItem {
 				fmt.Println("Unknown type: ", item.Type)
 			}
 
-			// TODO: Add the url to a queue for workers to download
 			item := DownloadItem{}
 			item.URL = url
 			item.userID = userName
-			items = append(items, item)
+
+			out <- item
 		}
 	}
-	return items
 }
 
+// download files received from the channel
+func downloadFiles(c <-chan DownloadItem, outputFolder string) {
+	for item := range c {
+		log.Println("Downloading ", item)
+		downloadFile(item, outputFolder)
+	}
+}
+
+// download a single file defined by DownloadItem to outputFolder
 func downloadFile(item DownloadItem, outputFolder string) {
 	var filename string
 
@@ -239,10 +256,11 @@ func main() {
 		return
 	}
 
-	responses := getPages(*userName)
-	items := parseMediaURLs(responses, *userName)
+	pages := make(chan InstagramAPI, 100)
+	files := make(chan DownloadItem, 3)
+	// get pages
+	go getPages(*userName, pages)
+	go parseMediaURLs(*userName, pages, files)
 
-	for _, item := range items {
-		downloadFile(item, "output")
-	}
+	downloadFiles(files, "output")
 }
