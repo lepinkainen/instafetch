@@ -1,3 +1,5 @@
+// instafetch is a tool for quicky backing up an instagram account
+
 package main
 
 import (
@@ -15,6 +17,8 @@ import (
 )
 
 var userName = flag.String("username", "", "Username to back up")
+var update = flag.Bool("update", false, "Update all existing downloads")
+var debug = flag.Bool("debug", false, "Enable debug logging")
 
 // InstagramAPI holds all of the data returned by the Instagram media query
 // generated with https://mholt.github.io/json-to-go/
@@ -113,21 +117,23 @@ func parsePage(userID string, maxID string) InstagramAPI {
 		url = fmt.Sprintf("%s?max_id=%s", url, maxID)
 	}
 
+	// Fetch the page
 	res, err := http.Get(url)
 	if err != nil {
 		panic(err.Error())
 	}
 	defer res.Body.Close()
 
+	// Read the whole response to memory
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		panic(err.Error())
 	}
 
-	// interface to hold the instagram json
+	// interface to hold the instagram JSON
 	var response InstagramAPI
 
-	// unmarshal the json to the interface
+	// unmarshal the JSON to the interface
 	err = json.Unmarshal(body, &response)
 	if err != nil {
 		panic(err.Error())
@@ -137,7 +143,6 @@ func parsePage(userID string, maxID string) InstagramAPI {
 }
 
 func getPages(userName string, c chan<- InstagramAPI) {
-	defer close(c)
 
 	var responses []InstagramAPI
 	var pageCount = 1
@@ -154,27 +159,28 @@ func getPages(userName string, c chan<- InstagramAPI) {
 
 		pageCount = pageCount + 1
 
+		// send found page response to channel
 		c <- response
-		// store current page
-		//responses = append(responses, response)
+
+		log.Printf("Got page at %s for %s\n", lastID, userName)
 		// no more pages, stop
-		log.Println("Got page at ", lastID)
 		if !response.MoreAvailable {
 			break
 		}
 	}
 
-	log.Println("Pages parsed, count: ", pageCount)
-	//return responses
+	log.Printf("Parsed %d pages for %s", pageCount, userName)
 }
 
 // Takes an InstagramAPI response and parses images it finds to DownloadItems
-func parseMediaURLs(userName string, in <-chan InstagramAPI, out chan<- DownloadItem) {
-	defer close(out)
+func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
+	//defer close(out)
 
 	var url string
+	var userName string
 
 	for response := range in {
+		userName = response.Items[0].User.Username
 		for _, item := range response.Items {
 			switch item.Type {
 			case "image":
@@ -200,8 +206,11 @@ func parseMediaURLs(userName string, in <-chan InstagramAPI, out chan<- Download
 
 // download files received from the channel
 func downloadFiles(c <-chan DownloadItem, outputFolder string) {
+	// TODO: Worker-pattern for a fixed amount of simultaneous downloads
 	for item := range c {
-		log.Println("Downloading ", item)
+		if *debug {
+			log.Println("Downloading ", item)
+		}
 		downloadFile(item, outputFolder)
 	}
 }
@@ -225,7 +234,9 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
 	out, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if os.IsExist(err) {
-		log.Println("Already downloaded: ", filename)
+		if *debug {
+			log.Println("Already downloaded: ", filename)
+		}
 		return
 	}
 	if err != nil {
@@ -251,16 +262,41 @@ func downloadFile(item DownloadItem, outputFolder string) {
 func main() {
 	flag.Parse()
 
-	if *userName == "" {
-		fmt.Println("username must be defined")
+	// check for required variables
+	if *userName == "" && *update == false {
+		fmt.Println("Usage: ")
+		flag.PrintDefaults()
 		return
 	}
 
+	var accounts []string
+
+	if *update {
+		// multiple accounts
+		files, _ := ioutil.ReadDir("./output")
+		for _, f := range files {
+			if f.IsDir() {
+				fmt.Println(f.Name())
+				accounts = append(accounts, f.Name())
+			}
+		}
+	} else {
+		// Single account
+		accounts = append(accounts, *userName)
+	}
+
 	pages := make(chan InstagramAPI, 100)
-	files := make(chan DownloadItem, 3)
-	// get pages
-	go getPages(*userName, pages)
-	go parseMediaURLs(*userName, pages, files)
+	files := make(chan DownloadItem, 100)
+	defer close(pages)
+	defer close(files)
+
+	// launch a goroutine for each account
+	for _, userName := range accounts {
+		go getPages(userName, pages)
+	}
+
+	// grab instagram api responses and produce a list to files to download
+	go parseMediaURLs(pages, files)
 
 	downloadFiles(files, "output")
 }
