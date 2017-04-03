@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 )
 
 var userName = flag.String("username", "", "Username to back up")
@@ -230,7 +231,7 @@ func downloadFile(item DownloadItem, outputFolder string) {
 
 	filename = path.Join(outputFolder, item.userID, filename)
 
-	// Create output file
+	// Create output file and check for its existence at the same time - no race conditions
 	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
 	out, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if os.IsExist(err) {
@@ -285,18 +286,43 @@ func main() {
 		accounts = append(accounts, *userName)
 	}
 
-	pages := make(chan InstagramAPI, 100)
+	// Buffered channels for pages and files to throttle a bit
+	pages := make(chan InstagramAPI, 10)
 	files := make(chan DownloadItem, 100)
-	defer close(pages)
-	defer close(files)
 
-	// launch a goroutine for each account
+	var wgPages sync.WaitGroup
+	wgPages.Add(len(accounts))
+
+	// launch a goroutine for each account to fetch the pages
 	for _, userName := range accounts {
-		go getPages(userName, pages)
+		userName := userName
+		go func() {
+			getPages(userName, pages)
+			wgPages.Done()
+		}()
 	}
 
+	// Wait for pages to be downloaded and close the channel after done
+	// this will end the range loop and the goroutines will finish
+	go func() {
+		wgPages.Wait()
+		close(pages)
+		log.Println("Page channel closed")
+	}()
+
+	var wgParse sync.WaitGroup
+	wgParse.Add(1)
 	// grab instagram api responses and produce a list to files to download
-	go parseMediaURLs(pages, files)
+	go func() {
+		parseMediaURLs(pages, files)
+		wgParse.Done()
+	}()
+
+	go func() {
+		wgParse.Wait()
+		close(files)
+		log.Println("File channel closed")
+	}()
 
 	downloadFiles(files, "output")
 }
