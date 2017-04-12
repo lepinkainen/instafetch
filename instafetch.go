@@ -152,6 +152,12 @@ func getPages(userName string, c chan<- InstagramAPI) {
 
 	// get the first page and send it forward immediately
 	response := parsePage(userName, "")
+
+	if len(response.Items) == 0 {
+		log.Println("User page is private for ", userName)
+		return
+	}
+
 	c <- response
 
 	if *latest {
