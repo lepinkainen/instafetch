@@ -13,12 +13,15 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var userName = flag.String("username", "", "Username to back up")
 var update = flag.Bool("update", false, "Update all existing downloads")
+var latest = flag.Bool("latest", false, "Only fetch the first page of each target")
 var debug = flag.Bool("debug", false, "Enable debug logging")
 
 // InstagramAPI holds all of the data returned by the Instagram media query
@@ -106,8 +109,9 @@ type InstagramAPI struct {
 
 // DownloadItem contains all data needed to download a file
 type DownloadItem struct {
-	URL    string
-	userID string
+	URL     string
+	userID  string
+	created time.Time
 }
 
 // parsePage returns images for the given user
@@ -144,13 +148,16 @@ func parsePage(userID string, maxID string) InstagramAPI {
 }
 
 func getPages(userName string, c chan<- InstagramAPI) {
-
-	var responses []InstagramAPI
 	var pageCount = 1
 
-	// get the first page
+	// get the first page and send it forward immediately
 	response := parsePage(userName, "")
-	responses = append(responses, response)
+	c <- response
+
+	if *latest {
+		log.Printf("Only fetching latest page for %s", userName)
+		return
+	}
 
 	for {
 		// Get last ID on this page
@@ -163,7 +170,7 @@ func getPages(userName string, c chan<- InstagramAPI) {
 		// send found page response to channel
 		c <- response
 
-		log.Printf("Got page at %s for %s\n", lastID, userName)
+		log.Printf("Got page %d for %s\n", pageCount, userName)
 		// no more pages, stop
 		if !response.MoreAvailable {
 			break
@@ -196,10 +203,16 @@ func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
 				fmt.Println("Unknown type: ", item.Type)
 			}
 
+			// CreatedTime is an unix timestamp in string format
+			i, err := strconv.ParseInt(item.CreatedTime, 10, 64)
+			if err != nil {
+				panic(err)
+			}
+
 			item := DownloadItem{}
 			item.URL = url
 			item.userID = userName
-
+			item.created = time.Unix(i, 0) // save created as go Time
 			out <- item
 		}
 	}
@@ -227,8 +240,11 @@ func downloadFile(item DownloadItem, outputFolder string) {
 		panic(err.Error())
 	}
 	tokens := strings.Split(url.Path, "/")
+	// Grab the actual filename from the path
 	filename = tokens[len(tokens)-1]
-
+	// Prepend the date the image was added to instagram and username to the file for additional metadata
+	created := item.created.UTC().Format("2006-01-02")
+	filename = created + "_" + item.userID + "_" + filename
 	filename = path.Join(outputFolder, item.userID, filename)
 
 	// Create output file and check for its existence at the same time - no race conditions
@@ -241,14 +257,16 @@ func downloadFile(item DownloadItem, outputFolder string) {
 		return
 	}
 	if err != nil {
-		panic(err.Error())
+		log.Println("Error when opening file for saving: ", err.Error())
+		return
 	}
 	defer out.Close()
 
 	// download the file
 	resp, err := http.Get(item.URL)
 	if err != nil {
-		panic(err.Error())
+		log.Println("Error when downloading: ", err.Error())
+		return
 	}
 	defer resp.Body.Close()
 
@@ -257,7 +275,7 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	if err != nil {
 		panic(err.Error())
 	}
-	log.Println("Downloaded: ", filename)
+	log.Printf("Downloaded: %s", filename)
 }
 
 func main() {
@@ -273,37 +291,45 @@ func main() {
 	var accounts []string
 
 	if *update {
+		fmt.Println("Updating all existing sets:")
 		// multiple accounts
+		// loop through directories in output and assume each is an userID
 		files, _ := ioutil.ReadDir("./output")
 		for _, f := range files {
 			if f.IsDir() {
-				fmt.Println(f.Name())
+				fmt.Println("  ", f.Name())
 				accounts = append(accounts, f.Name())
 			}
 		}
+		fmt.Println()
 	} else {
 		// Single account
 		accounts = append(accounts, *userName)
 	}
 
 	// Buffered channels for pages and files to throttle a bit
+	// Maximum number of page responses to buffer
 	pages := make(chan InstagramAPI, 10)
-	files := make(chan DownloadItem, 100)
+	// Resolved and parsed actual DownloadItems
+	files := make(chan DownloadItem, 200)
 
 	var wgPages sync.WaitGroup
-	wgPages.Add(len(accounts))
 
 	// launch a goroutine for each account to fetch the pages
+	// the buffered pages-channel will limit hammering on the server
+	// combined with the single-threaded download operation
 	for _, userName := range accounts {
-		userName := userName
+		userName := userName // copy the variable to a new memory location
 		go func() {
+			// Use WaitGroup to track when all page goroutines are ready
+			wgPages.Add(1)
 			getPages(userName, pages)
 			wgPages.Done()
 		}()
 	}
 
 	// Wait for pages to be downloaded and close the channel after done
-	// this will end the range loop and the goroutines will finish
+	// this will end the range loop and the related goroutines will finish
 	go func() {
 		wgPages.Wait()
 		close(pages)
