@@ -24,6 +24,7 @@ var userName = flag.String("username", "", "Username to back up")
 var update = flag.Bool("update", false, "Update all existing downloads")
 var latest = flag.Bool("latest", false, "Only fetch the first page of each target")
 var debug = flag.Bool("debug", false, "Enable debug logging")
+var cron = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
 
 // InstagramAPI holds all of the data returned by the Instagram media query
 // generated with https://mholt.github.io/json-to-go/
@@ -165,7 +166,9 @@ func getPages(userName string, c chan<- InstagramAPI) {
 	c <- response
 
 	if *latest {
-		log.Printf("Only fetching latest page for %s", userName)
+		if !*cron {
+			log.Printf("Only fetching latest page for %s", userName)
+		}
 		return
 	}
 
@@ -187,13 +190,18 @@ func getPages(userName string, c chan<- InstagramAPI) {
 			c <- response
 		}
 
+		if !*cron {
+			log.Printf("Got page %d for %s\n", pageCount, userName)
+		}
 		// no more pages, stop
 		if !response.MoreAvailable {
 			break
 		}
 	}
 
-	log.Printf("Parsed %d pages for %s", pageCount, userName)
+	if !*cron {
+		log.Printf("Parsed %d pages for %s", pageCount, userName)
+	}
 }
 
 // Takes an InstagramAPI response and parses images it finds to DownloadItems
@@ -289,7 +297,9 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	if err != nil {
 		log.Panicln("Could not write file to disk", err.Error())
 	}
-	log.Printf("Downloaded: %s", filename)
+	if !*cron {
+		log.Printf("Downloaded: %s", filename)
+	}
 }
 
 func init() {
@@ -312,17 +322,20 @@ func main() {
 	var accounts []string
 
 	if *update {
-		fmt.Println("Updating all existing sets:")
+		if !*cron {
+			fmt.Println("Updating all existing sets:")
+		}
 		// multiple accounts
 		// loop through directories in output and assume each is an userID
 		files, _ := ioutil.ReadDir("./output")
 		for _, f := range files {
 			if f.IsDir() {
-				fmt.Println("  ", f.Name())
+				if !*cron {
+					fmt.Println("  ", f.Name())
+				}
 				accounts = append(accounts, f.Name())
 			}
 		}
-		fmt.Println()
 	} else {
 		// Single account
 		accounts = append(accounts, *userName)
@@ -354,7 +367,9 @@ func main() {
 	go func() {
 		wgPages.Wait()
 		close(pages)
-		log.Println("Page channel closed")
+		if *debug {
+			log.Println("Page channel closed")
+		}
 	}()
 
 	var wgParse sync.WaitGroup
@@ -368,7 +383,9 @@ func main() {
 	go func() {
 		wgParse.Wait()
 		close(files)
-		log.Println("File channel closed")
+		if *debug {
+			log.Println("File channel closed")
+		}
 	}()
 
 	downloadFiles(files, "output")
