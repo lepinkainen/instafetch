@@ -3,12 +3,13 @@
 package main
 
 import (
+	log "github.com/Sirupsen/logrus"
+
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -119,6 +120,9 @@ type DownloadItem struct {
 func parsePage(userID string, maxID string) InstagramAPI {
 	var url = fmt.Sprintf("https://www.instagram.com/%s/media/", userID)
 
+	// interface to hold the instagram JSON
+	var response InstagramAPI
+
 	if maxID != "" {
 		url = fmt.Sprintf("%s?max_id=%s", url, maxID)
 	}
@@ -126,23 +130,23 @@ func parsePage(userID string, maxID string) InstagramAPI {
 	// Fetch the page
 	res, err := http.Get(url)
 	if err != nil {
-		panic(err.Error())
+		log.Errorln("HTTP Error", err.Error())
+		return response
 	}
 	defer res.Body.Close()
 
 	// Read the whole response to memory
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		panic(err.Error())
+		log.Errorln("Error reading response from I/O", err.Error())
+		return response
 	}
-
-	// interface to hold the instagram JSON
-	var response InstagramAPI
 
 	// unmarshal the JSON to the interface
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		panic(err.Error())
+		log.Errorln("Error unmashaling JSON", err.Error())
+		return response
 	}
 
 	return response
@@ -155,7 +159,7 @@ func getPages(userName string, c chan<- InstagramAPI) {
 	response := parsePage(userName, "")
 
 	if len(response.Items) == 0 {
-		log.Println("User page is private for ", userName)
+		log.Errorf("User page is private for %s", userName)
 		return
 	}
 
@@ -176,8 +180,15 @@ func getPages(userName string, c chan<- InstagramAPI) {
 
 		pageCount = pageCount + 1
 
-		// send found page response to channel
-		c <- response
+		log.Printf("Got page %d for %s", pageCount, userName)
+
+		// An error during parsePage will return an empty interface
+		if len(response.Items) == 0 {
+			continue
+		} else {
+			// send found page response to channel
+			c <- response
+		}
 
 		if !*cron {
 			log.Printf("Got page %d for %s\n", pageCount, userName)
@@ -213,13 +224,13 @@ func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
 			case "video":
 				url = item.Videos.StandardResolution.URL
 			default:
-				fmt.Println("Unknown media type: ", item.Type)
+				log.Warningln("Unknown type: ", item.Type)
 			}
 
 			// CreatedTime is an unix timestamp in string format
 			i, err := strconv.ParseInt(item.CreatedTime, 10, 64)
 			if err != nil {
-				panic(err)
+				log.Panicln("Could not parse CreatedTime")
 			}
 
 			item := DownloadItem{}
@@ -235,9 +246,7 @@ func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
 func downloadFiles(c <-chan DownloadItem, outputFolder string) {
 	// TODO: Worker-pattern for a fixed amount of simultaneous downloads
 	for item := range c {
-		if *debug {
-			log.Println("Downloading ", item)
-		}
+		log.Debugln("Downloading ", item)
 		downloadFile(item, outputFolder)
 	}
 }
@@ -257,7 +266,7 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	filename = tokens[len(tokens)-1]
 	// Prepend the date the image was added to instagram and username to the file for additional metadata
 	created := item.created.UTC().Format("2006-01-02")
-	filename = created + "_" + item.userID + "_" + filename
+	filename = fmt.Sprintf("%s_%s_%s", created, item.userID, filename)
 	filename = path.Join(outputFolder, item.userID, filename)
 
 	// Create output file and check for its existence at the same time - no race conditions
@@ -270,7 +279,7 @@ func downloadFile(item DownloadItem, outputFolder string) {
 		return
 	}
 	if err != nil {
-		log.Println("Error when opening file for saving: ", err.Error())
+		log.Errorln("Error when opening file for saving: ", err.Error())
 		return
 	}
 	defer out.Close()
@@ -278,7 +287,7 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	// download the file
 	resp, err := http.Get(item.URL)
 	if err != nil {
-		log.Println("Error when downloading: ", err.Error())
+		log.Errorln("Error when downloading: ", err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -286,11 +295,18 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	// copy file to disk
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		panic(err.Error())
+		log.Panicln("Could not write file to disk", err.Error())
 	}
 	if !*cron {
 		log.Printf("Downloaded: %s", filename)
 	}
+}
+
+func init() {
+	formatter := &log.TextFormatter{}
+	formatter.FullTimestamp = true
+
+	log.SetFormatter(formatter)
 }
 
 func main() {
