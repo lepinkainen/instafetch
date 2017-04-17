@@ -273,9 +273,7 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
 	out, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if os.IsExist(err) {
-		if *debug {
-			log.Println("Already downloaded: ", filename)
-		}
+		log.Debugln("Already downloaded: ", filename)
 		return
 	}
 	if err != nil {
@@ -307,6 +305,14 @@ func init() {
 	formatter.FullTimestamp = true
 
 	log.SetFormatter(formatter)
+
+	log.SetOutput(os.Stdout)
+
+	if *cron {
+		log.SetLevel(log.WarnLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
+	}
 }
 
 func main() {
@@ -317,6 +323,10 @@ func main() {
 		fmt.Println("Usage: ")
 		flag.PrintDefaults()
 		return
+	}
+
+	if *debug {
+		log.SetLevel(log.DebugLevel)
 	}
 
 	var accounts []string
@@ -367,9 +377,7 @@ func main() {
 	go func() {
 		wgPages.Wait()
 		close(pages)
-		if *debug {
-			log.Println("Page channel closed")
-		}
+		log.Debugln("Page channel closed")
 	}()
 
 	var wgParse sync.WaitGroup
@@ -383,9 +391,7 @@ func main() {
 	go func() {
 		wgParse.Wait()
 		close(files)
-		if *debug {
-			log.Println("File channel closed")
-		}
+		log.Debugln("File channel closed")
 	}()
 
 	downloadFiles(files, "output")
