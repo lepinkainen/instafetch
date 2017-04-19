@@ -325,9 +325,18 @@ func main() {
 		return
 	}
 
+	ex, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	cwd := path.Dir(ex)
+
 	if *debug {
 		log.SetLevel(log.DebugLevel)
+		log.Debugf("Working directory %s", cwd)
 	}
+
+	outDir := path.Join(cwd, "output")
 
 	var accounts []string
 
@@ -337,7 +346,7 @@ func main() {
 		}
 		// multiple accounts
 		// loop through directories in output and assume each is an userID
-		files, _ := ioutil.ReadDir("./output")
+		files, _ := ioutil.ReadDir(outDir)
 		for _, f := range files {
 			if f.IsDir() {
 				if !*cron {
@@ -394,5 +403,5 @@ func main() {
 		log.Debugln("File channel closed")
 	}()
 
-	downloadFiles(files, "output")
+	downloadFiles(files, outDir)
 }
