@@ -7,19 +7,17 @@ import (
 	"testing"
 )
 
-func TestJSONParsing(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{
+var (
+	mediaJSON = `{
    "items":[
       {
          "id":"1442206613258829026_22792833",
          "code":"BQDv0YMAvzi",
          "user":{
             "id":"22792833",
-            "full_name":"Riku Lindblad",
+            "full_name":"Test User",
             "profile_picture":"https://scontent-ams3-1.cdninstagram.com/t51.2885-19/s150x150/12716678_1180466221963874_1859835217_a.jpg",
-            "username":"lepinkainen"
+            "username":"instagram"
          },
          "images":{
             "thumbnail":{
@@ -101,13 +99,19 @@ func TestJSONParsing(t *testing.T) {
    ],
    "more_available":false,
    "status":"ok"
-}`)
+}`
+)
+
+func TestJSONParsing(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, mediaJSON)
 	}))
 	defer ts.Close()
 
 	// generate fake URL for parsePage
 	instagramURL = ts.URL + "/%s"
-	result := parsePage("lepinkainen", "")
+	result := parsePage("instagram", "")
 
 	if result.MoreAvailable != false {
 		t.Error("Invalid MoreAvailable response")
@@ -117,4 +121,92 @@ func TestJSONParsing(t *testing.T) {
 	if itemCount != 1 {
 		t.Errorf("Found too many items: %d", itemCount)
 	}
+
+	if result.Items[0].User.Username != "instagram" {
+		t.Errorf("Wrong username in response")
+	}
+}
+
+func TestGetPages(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, mediaJSON)
+	}))
+	defer ts.Close()
+
+	instagramURL = ts.URL + "/%s"
+	c := make(chan InstagramAPI)
+	defer close(c)
+
+	go getPages("lepinkainen", c)
+	result := <-c
+
+	if result.MoreAvailable != false {
+		t.Error("Invalid MoreAvailable response")
+	}
+
+	itemCount := len(result.Items)
+	if itemCount != 1 {
+		t.Errorf("Found too many items: %d", itemCount)
+	}
+
+	if result.Items[0].User.Username != "instagram" {
+		t.Errorf("Wrong username in response")
+	}
+}
+
+func createTestItem(url, createdTime, mediaType string) []Items {
+	// Slice to hold the media items
+	items := []Items{}
+	// a single media item
+	item := Items{}
+	item.Images.URL = url
+	item.CreatedTime = createdTime
+	item.Type = mediaType
+
+	// append the test item to the slice
+	items = append(items, item)
+
+	return items
+}
+
+func TestParseMediaURL(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, mediaJSON)
+	}))
+	defer ts.Close()
+
+	in := make(chan InstagramAPI)
+	out := make(chan DownloadItem)
+
+	go parseMediaURLs(in, out)
+	apiresponse := InstagramAPI{}
+
+	// A valid test item
+	apiresponse.Items = createTestItem("https://scontent-ams3-1.cdninstagram.com/t51.2885-15/s640x640/sh0.08/e35/16230488_110094772841683_7263292011141136384_n.jpg",
+		"1486144447",
+		"image")
+	apiresponse.MoreAvailable = false
+
+	in <- apiresponse
+	resultItem := <-out
+
+	if resultItem.URL != "https://scontent-ams3-1.cdninstagram.com/t51.2885-15/sh0.08/e35/16230488_110094772841683_7263292011141136384_n.jpg" {
+		t.Errorf("Large image URL detection failed")
+	}
+
+	// TODO: check	resultItem.created
+
+	/*
+		// TODO: Invalid test item
+		// How to handle errors thrown by the method
+		apiresponse.Items = createTestItem("https://scontent-ams3-1.cdninstagram.com/t51.2885-15/s640x640/sh0.08/e35/16230488_110094772841683_7263292011141136384_n.jpg",
+			"1486144447",
+			"")
+
+		in <- apiresponse
+		resultItem = <-out
+	*/
+
 }
