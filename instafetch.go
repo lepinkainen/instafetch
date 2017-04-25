@@ -152,7 +152,7 @@ func getPages(userName string, c chan<- InstagramAPI) {
 
 	if *latest {
 		if !*cron {
-			log.Printf("Only fetching latest page for %s", userName)
+			log.Infof("Only fetching latest page for %s", userName)
 		}
 		return
 	}
@@ -175,9 +175,6 @@ func getPages(userName string, c chan<- InstagramAPI) {
 			c <- response
 		}
 
-		if !*cron {
-			log.Printf("Got page %d for %s\n", pageCount, userName)
-		}
 		// no more pages, stop
 		if !response.MoreAvailable {
 			break
@@ -212,7 +209,6 @@ func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
 			case "video":
 				url = item.Videos.StandardResolution.URL
 			case "carousel":
-				log.Println("got carousel")
 				for _, subItem := range item.CarouselMedia {
 					switch subItem.Type {
 					case "image":
