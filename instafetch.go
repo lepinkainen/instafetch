@@ -41,15 +41,16 @@ type InstagramAPI struct {
 
 // Items is a struct for the media responses
 type Items struct {
-	Caption     `json:"caption"`
-	Code        string `json:"code"`
-	CreatedTime string `json:"created_time"`
-	ID          string `json:"id"`
-	Images      `json:"images"`
-	Videos      `json:"videos"`
-	Link        string `json:"link"`
-	Type        string `json:"type"`
-	User        `json:"user"`
+	Caption       `json:"caption"`
+	Code          string `json:"code"`
+	CreatedTime   string `json:"created_time"`
+	ID            string `json:"id"`
+	Images        `json:"images"`
+	Videos        `json:"videos"`
+	CarouselMedia `json:"carousel_media"`
+	Link          string `json:"link"`
+	Type          string `json:"type"`
+	User          `json:"user"`
 }
 
 // Caption describes the media caption
@@ -57,6 +58,13 @@ type Caption struct {
 	CreatedTime string `json:"created_time"`
 	ID          string `json:"id"`
 	Text        string `json:"text"`
+}
+
+// CarouselMedia is an image/video carousel of multiple images
+type CarouselMedia []struct {
+	Images `json:"images"`
+	Videos `json:"videos"`
+	Type   string `json:"type"`
 }
 
 // Images holds the image-type media info
@@ -189,23 +197,43 @@ func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
 	for response := range in {
 		userName = response.Items[0].User.Username
 		for _, item := range response.Items {
-			switch item.Type {
-			case "image":
-				url = item.Images.StandardResolution.URL
-				// Fix up the URL to return the full res image
-				// TODO: imageURL = imageURL.replaceAll("\\?ig_cache_key.+$", "");
-				url = strings.Replace(url, "s640x640/", "", -1)
-				url = strings.Replace(url, "scontent.cdninstagram.com/hphotos-", "igcdn-photos-d-a.akamaihd.net/hphotos-ak-", -1)
-			case "video":
-				url = item.Videos.StandardResolution.URL
-			default:
-				log.Warningln("Unknown type: ", item.Type)
-			}
 
 			// CreatedTime is an unix timestamp in string format
 			i, err := strconv.ParseInt(item.CreatedTime, 10, 64)
 			if err != nil {
 				log.Panicln("Could not parse CreatedTime")
+			}
+
+			switch item.Type {
+			case "image":
+				url = item.Images.StandardResolution.URL
+				// Fix up the URL to return the full res image
+				url = strings.Replace(url, "s640x640/", "", -1)
+			case "video":
+				url = item.Videos.StandardResolution.URL
+			case "carousel":
+				log.Println("got carousel")
+				for _, subItem := range item.CarouselMedia {
+					switch subItem.Type {
+					case "image":
+						url = subItem.Images.StandardResolution.URL
+						url = strings.Replace(url, "s640x640/", "", -1)
+					case "video":
+						url = subItem.Videos.StandardResolution.URL
+					default:
+						log.Warningf("Unknown subtype: %s for user %s ", item.Type, userName)
+					}
+
+					item := DownloadItem{}
+					item.URL = url
+					item.userID = userName
+					item.created = time.Unix(i, 0) // save created as go Time
+					out <- item
+				}
+				// the whole carousel has been sent for downloading, continue to the next main item
+				continue
+			default:
+				log.Warningf("Unknown type: %s for user %s ", item.Type, userName)
 			}
 
 			item := DownloadItem{}
