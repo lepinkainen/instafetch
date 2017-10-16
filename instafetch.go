@@ -143,7 +143,7 @@ func getPages(userName string, c chan<- InstagramAPI) {
 	// get the first page and send it forward immediately
 	response := parsePage(userName, "")
 
-	if len(response.Items) == 0 {
+	if len(response.Items) == 0 && response.MoreAvailable == false {
 		log.Errorf("User page is private for %s", userName)
 		return
 	}
@@ -158,8 +158,12 @@ func getPages(userName string, c chan<- InstagramAPI) {
 	}
 
 	for {
+
+		lastID := ""
 		// Get last ID on this page
-		lastID := response.Items[len(response.Items)-1].ID
+		if len(response.Items) > 1 {
+			lastID = response.Items[len(response.Items)-1].ID
+		}
 		// fetch next page
 		response = parsePage(userName, lastID)
 
@@ -292,7 +296,7 @@ func downloadFile(item DownloadItem, outputFolder string) {
 	// streams file to disk
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		log.Panicln("Could not write file to disk", err.Error())
+		log.Printf("Could not write file to disk %s", err.Error())
 	}
 	if !*cron {
 		log.Printf("Downloaded: %s", filename)
