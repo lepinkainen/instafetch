@@ -2,6 +2,17 @@
 
 package parser
 
+import "time"
+
+// DownloadItem contains all data needed to download a file
+type DownloadItem struct {
+	URL       string
+	UserID    string // Username
+	ID        string // Numeric ID of user
+	Shortcode string // Shortcode for the media
+	Created   time.Time
+}
+
 // User defines the user who has posted stuff
 type User struct {
 	Biography              string      `json:"biography"`
@@ -99,4 +110,16 @@ type Nodes struct {
 	IsVideo          bool        `json:"is_video"`
 	MediaPreview     string      `json:"media_preview"`
 	VideoViews       int         `json:"video_views"`
+}
+
+type Node struct {
+	Typename           string `json:"__typename"`
+	CommentsDisabled   bool   `json:"comments_disabled"`
+	DisplayURL         string `json:"display_url"`
+	EdgeMediaToCaption `json:"edge_media_to_caption"`
+	ID                 string `json:"id"`
+	IsVideo            bool   `json:"is_video"`
+	Shortcode          string `json:"shortcode"`
+	TakenAtTimestamp   int    `json:"taken_at_timestamp"`
+	ThumbnailSrc       string `json:"thumbnail_src"`
 }

@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"time"
+
 	log "github.com/Sirupsen/logrus"
 
 	"encoding/json"
@@ -33,7 +35,7 @@ func getNextPageInfo(response InstagramAPI) (string, string) {
 }
 
 // the first page is a bit different from the other pages
-func getFirstPage(userName string) InstagramAPI {
+func getFirstPage(userName string) (InstagramAPI, error) {
 	myLogger := log.WithField("module", "stream")
 	var url = fmt.Sprintf(instagramStreamURL, userName)
 
@@ -43,7 +45,7 @@ func getFirstPage(userName string) InstagramAPI {
 	data, err := worker.GetPage(url)
 	if err != nil {
 		myLogger.Errorln("Error fetching page", err.Error())
-		return response
+		return response, err
 	}
 
 	myLogger.Debugf("Page for %s fetched", userName)
@@ -51,29 +53,34 @@ func getFirstPage(userName string) InstagramAPI {
 	// unmarshal the JSON to the interface
 	err = json.Unmarshal(data, &response)
 	if err != nil {
-		myLogger.Errorln("Error unmashaling JSON", err.Error())
-		fmt.Println(string(data))
-		return response
+		myLogger.Errorf("Error unmashaling JSON for user %s", userName, err.Error())
+		//fmt.Println(string(data))
+		return response, err
 	}
 
 	myLogger.Debugf("Data for %s unmarshaled", userName)
 
-	return response
+	return response, nil
 }
 
-func parseFirstPage(res InstagramAPI, urls chan<- string) {
+func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "stream")
 
 	// get media urls according to type
 	for _, media := range res.User.Media.Nodess {
+		item := DownloadItem(baseItem)
+		item.Shortcode = media.Code
+
 		switch shortcode := media.Typename; shortcode {
 		case "GraphVideo":
-			getVideoURL(media.Code, urls)
+			getVideoURL(item, items)
 		case "GraphSidecar":
-			getSidecarURLs(media.Code, urls)
+			getSidecarURLs(item, items)
 		case "GraphImage":
-			urls <- media.DisplaySrc
-			//getImageURL(media.Code, urls)
+			item.Created = time.Unix(int64(media.Date), 0)
+			item.URL = media.DisplaySrc
+			items <- item
+			//getImageURL(media.Code, items)
 		default:
 			myLogger.Errorf("Unknown media type: '%v'", media.Typename)
 		}
@@ -81,19 +88,32 @@ func parseFirstPage(res InstagramAPI, urls chan<- string) {
 }
 
 // MediaURLs returns direct links to all media on an users stream
-func MediaURLs(userName string, urls chan<- string) {
+func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "stream")
-	res := getFirstPage(userName)
 
-	parseFirstPage(res, urls)
+	res, err := getFirstPage(userName)
+	if err != nil {
+		myLogger.Errorf("Error when parsing first page for %s", userName)
+		return
+	}
 
-	id, endCursor := getNextPageInfo(res)
+	// Basic info for items to download
+	baseItem := DownloadItem{
+		UserID: res.Username,
+		ID:     res.User.ID,
+	}
 
-	page := 1
+	parseFirstPage(baseItem, res, items)
 
-	for endCursor != "" {
-		myLogger.Infof("Parsed page %d for %s", page, userName)
-		endCursor = parseNextPage(id, endCursor, urls)
-		page = page + 1
+	if !latestOnly {
+		id, endCursor := getNextPageInfo(res)
+
+		page := 1
+
+		for endCursor != "" {
+			myLogger.Infof("Parsed page %d for %s", page, userName)
+			endCursor = parseNextPage(baseItem, id, endCursor, items)
+			page = page + 1
+		}
 	}
 }

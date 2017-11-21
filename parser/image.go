@@ -13,7 +13,7 @@ func getDirectImageURL(response MediaObject) string {
 }
 
 // GetImageURL returns image URL from shortcode
-func getImageURL(shortcode string, urls chan<- string) {
+func getImageURL(shortcode string, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "image")
 	var url = fmt.Sprintf(mediaURL, shortcode)
 
@@ -31,7 +31,11 @@ func getImageURL(shortcode string, urls chan<- string) {
 		fmt.Println(string(data))
 	}
 
-	urls <- getDirectImageURL(response)
+	item := DownloadItem{
+		URL: getDirectImageURL(response),
+	}
+
+	items <- item
 
 	myLogger.Debugf("Got image from shortcode %s", shortcode)
 }

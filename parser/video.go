@@ -3,6 +3,7 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/lepinkainen/instafetch/worker"
@@ -17,9 +18,9 @@ func getDirectVideoURL(response MediaObject) string {
 }
 
 // GetVideoURL parses a video page and returns the direct video URL
-func getVideoURL(shortcode string, urls chan<- string) {
+func getVideoURL(baseItem DownloadItem, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "video")
-	var url = fmt.Sprintf(mediaURL, shortcode)
+	var url = fmt.Sprintf(mediaURL, baseItem.Shortcode)
 
 	var response MediaObject
 
@@ -35,7 +36,11 @@ func getVideoURL(shortcode string, urls chan<- string) {
 		fmt.Println(string(data))
 	}
 
-	urls <- getDirectVideoURL(response)
+	item := DownloadItem(baseItem)
+	item.URL = getDirectImageURL(response)
+	item.Created = time.Unix(int64(response.TakenAtTimestamp), 0) // save created as go Time
 
-	myLogger.Debugf("Got video from shortcode %s", shortcode)
+	items <- item
+
+	myLogger.Debugf("Got video from shortcode %s", baseItem.Shortcode)
 }

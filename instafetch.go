@@ -6,7 +6,13 @@ package main
 
 import (
 	"fmt"
-	"time"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
+	"sync"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/lepinkainen/instafetch/parser"
@@ -23,14 +29,6 @@ var (
 	debug    = flag.Bool("debug", false, "Enable debug logging")
 	cron     = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
 )
-
-// DownloadItem contains all data needed to download a file
-type DownloadItem struct {
-	URL     string
-	userID  string // Username
-	ID      string // Numeric ID of user
-	created time.Time
-}
 
 /*
 // getPages retrieves all pages for given user and returns them
@@ -145,63 +143,6 @@ func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
 	}
 }
 
-// download files received from the channel
-func downloadFiles(c <-chan DownloadItem, outputFolder string) {
-	// TODO: Worker-pattern for a fixed amount of simultaneous downloads
-	for item := range c {
-		log.Debugln("Downloading ", item)
-		downloadFile(item, outputFolder)
-	}
-}
-
-// download a single file defined by DownloadItem to outputFolder
-func downloadFile(item DownloadItem, outputFolder string) {
-	var filename string
-
-	os.MkdirAll(path.Join(outputFolder, item.userID), 0766)
-
-	url, err := url.Parse(item.URL)
-	if err != nil {
-		panic(err.Error())
-	}
-	tokens := strings.Split(url.Path, "/")
-	// Grab the actual filename from the path
-	filename = tokens[len(tokens)-1]
-	// Prepend the date the image was added to instagram and username to the file for additional metadata
-	created := item.created.UTC().Format("2006-01-02")
-	filename = fmt.Sprintf("%s_%s_%s", created, item.userID, filename)
-	filename = path.Join(outputFolder, item.userID, filename)
-
-	// Create output file and check for its existence at the same time - no race conditions
-	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
-	out, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
-	if os.IsExist(err) {
-		log.Debugln("Already downloaded: ", filename)
-		return
-	}
-	if err != nil {
-		log.Errorln("Error when opening file for saving: ", err.Error())
-		return
-	}
-	defer out.Close()
-
-	// download the file
-	resp, err := http.Get(item.URL)
-	if err != nil {
-		log.Errorln("Error when downloading: ", err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	// streams file to disk
-	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		log.Printf("Could not write file to disk %s", err.Error())
-	}
-	if !*cron {
-		log.Printf("Downloaded: %s", filename)
-	}
-}
 func oldMain() {
 	flag.Parse()
 
@@ -294,6 +235,59 @@ func oldMain() {
 }
 */
 
+// downloadFile gets a single file defined by DownloadItem to outputFolder
+func downloadFile(item parser.DownloadItem, outputFolder string) error {
+	var filename string
+
+	// create download dir for the account
+	os.MkdirAll(path.Join(outputFolder, item.UserID), 0766)
+
+	url, err := url.Parse(item.URL)
+	if err != nil {
+		panic(err.Error())
+	}
+	tokens := strings.Split(url.Path, "/")
+	// Grab the actual filename from the path
+	filename = tokens[len(tokens)-1]
+	// Prepend the date the image was added to instagram and username to the file for additional metadata
+	// example output: 2017-11-05_alexandrabring_22860351_504365496598712_7456505757811343360_n.jpg
+	created := item.Created.UTC().Format("2006-01-02")
+	filename = fmt.Sprintf("%s_%s_%s", created, item.UserID, filename)
+	filename = path.Join(outputFolder, item.UserID, filename)
+
+	// Create output file and check for its existence at the same time - no race conditions
+	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
+	out, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	if os.IsExist(err) {
+		log.Debugln("Already downloaded: ", filename)
+		return nil
+	}
+	if err != nil {
+		log.Errorln("Error when opening file for saving: ", err.Error())
+		return err
+	}
+	defer out.Close()
+
+	// download the file
+	resp, err := http.Get(item.URL)
+	if err != nil {
+		log.Errorln("Error when downloading: ", err.Error())
+		return err
+	}
+	defer resp.Body.Close()
+
+	// streams file to disk
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		log.Printf("Could not write file to disk %s", err.Error())
+		return err
+	}
+	if !*cron {
+		log.Printf("Downloaded: %s", filename)
+	}
+	return nil
+}
+
 func init() {
 	formatter := &log.TextFormatter{}
 	formatter.FullTimestamp = true
@@ -309,21 +303,105 @@ func init() {
 	}
 }
 
+func downloadWorker(id int, outDir string, jobs <-chan parser.DownloadItem) {
+	log.Debugf("DownloadWorker %d started", id)
+	for job := range jobs {
+		err := downloadFile(job, outDir)
+		if err != nil {
+			fmt.Println("Download error")
+		}
+		fmt.Println("Download done")
+	}
+	log.Infof("DownloadWorker %d stopped", id)
+}
+
+func parseWorker(id int, latestOnly bool, jobs <-chan string, items chan<- parser.DownloadItem) {
+	log.Debugf("ParseWorker %d started", id)
+	for job := range jobs {
+		log.Infof("Parsing data for %s", job)
+		parser.MediaURLs(job, latestOnly, items)
+	}
+	log.Infof("ParseWorker %d stopped", id)
+}
+
 func main() {
-	log.SetLevel(log.DebugLevel)
+	flag.Parse()
+
+	// check for required variables
+	if *userName == "" && *update == false {
+		fmt.Println("Usage: ")
+		flag.PrintDefaults()
+		return
+	}
+
+	ex, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	cwd := path.Dir(ex)
+
+	if *debug {
+		log.SetLevel(log.DebugLevel)
+		log.Debugf("Working directory %s", cwd)
+	}
+
+	outDir := path.Join(cwd, "output")
+
+	var wgDownloads sync.WaitGroup
+	var wgParsing sync.WaitGroup
 
 	// channel for urls, buffered
-	urls := make(chan string)
+	users := make(chan string)
+	items := make(chan parser.DownloadItem, 10)
 
-	go func() {
-		for url := range urls {
-			fmt.Printf("%v\n", url)
+	downloadWorkerCount := 5
+	pageWorkerCount := 5
+
+	// start workers for downloads
+	for w := 1; w <= downloadWorkerCount; w++ {
+		go func(w int) {
+			wgDownloads.Add(1)
+			defer wgDownloads.Done()
+			downloadWorker(w, outDir, items)
+			fmt.Println("Downloader quit")
+		}(w)
+	}
+
+	// workers for page scraping
+	for w := 1; w <= pageWorkerCount; w++ {
+		go func(w int) {
+			wgParsing.Add(1)
+			defer wgParsing.Done()
+
+			parseWorker(w, *latest, users, items)
+			fmt.Println("Parser quit")
+		}(w)
+	}
+
+	// Add work for parsers, which in turn will add work to the downloaders
+	if *update {
+		if !*cron {
+			fmt.Println("Updating all existing sets:")
 		}
-	}()
+		// multiple accounts
+		// loop through directories in output and assume each is an userID
+		files, _ := ioutil.ReadDir(outDir)
+		for _, f := range files {
+			if f.IsDir() {
+				users <- f.Name()
+			}
+		}
+	} else {
+		// Single account
+		users <- *userName
+	}
+	// all users have been added, close the channel
+	close(users)
 
-	parser.MediaURLs("silvialicius", urls)
-
-	// nothing incoming, close channel
-	close(urls)
+	wgParsing.Wait()
+	fmt.Println("----- PAGE PARSING DONE -----")
+	wgDownloads.Wait()
+	fmt.Println("----- DOWNLOADS DONE -----")
+	close(items)
 
 }

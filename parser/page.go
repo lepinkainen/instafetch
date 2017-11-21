@@ -3,6 +3,7 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/lepinkainen/instafetch/worker"
@@ -36,22 +37,18 @@ type EdgeOwnerToTimelineMedia struct {
 	PageInfo `json:"page_info"`
 }
 
-type Node struct {
-	Typename           string `json:"__typename"`
-	CommentsDisabled   bool   `json:"comments_disabled"`
-	DisplayURL         string `json:"display_url"`
-	EdgeMediaToCaption `json:"edge_media_to_caption"`
-	ID                 string `json:"id"`
-	IsVideo            bool   `json:"is_video"`
-	Shortcode          string `json:"shortcode"`
-}
-
 type EdgeMediaToCaption struct {
 	Edgess []Edges `json:"edges"`
 }
 
+func getPageImageItem(edge Edges) DownloadItem {
+	return DownloadItem{
+		URL: edge.DisplayURL,
+	}
+}
+
 // fetches all urls from a page and returns the cursor for the next page
-func parseNextPage(id string, endCursor string, urls chan<- string) string {
+func parseNextPage(baseItem DownloadItem, id string, endCursor string, items chan<- DownloadItem) string {
 	myLogger := log.WithField("module", "page")
 
 	myLogger.Debug("-- Parsing next page")
@@ -74,13 +71,17 @@ func parseNextPage(id string, endCursor string, urls chan<- string) string {
 	}
 
 	for _, image := range response.Data.Edgess {
+		item := DownloadItem(baseItem)
+		item.Shortcode = image.Shortcode
 		switch shortcode := image.Typename; shortcode {
 		case "GraphVideo":
-			getVideoURL(image.Shortcode, urls)
+			getVideoURL(item, items)
 		case "GraphSidecar":
-			getSidecarURLs(image.Shortcode, urls)
+			getSidecarURLs(item, items)
 		case "GraphImage":
-			urls <- image.DisplayURL
+			item.Created = time.Unix(int64(image.Node.TakenAtTimestamp), 0)
+			item.URL = image.DisplayURL
+			items <- item
 		default:
 			myLogger.Errorf("Unknown media type: '%v'", image.Typename)
 		}
