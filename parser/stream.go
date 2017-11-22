@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -44,7 +45,7 @@ func getFirstPage(userName string) (InstagramAPI, error) {
 
 	data, err := worker.GetPage(url)
 	if err != nil {
-		myLogger.Errorln("Error fetching page", err.Error())
+		myLogger.Errorln("Error fetching page: ", err.Error())
 		return response, err
 	}
 
@@ -54,7 +55,7 @@ func getFirstPage(userName string) (InstagramAPI, error) {
 	err = json.Unmarshal(data, &response)
 	if err != nil {
 		myLogger.Errorf("Error unmashaling JSON for user %s: %v", userName, err.Error())
-		//fmt.Println(string(data))
+		fmt.Println(string(data))
 		return response, err
 	}
 
@@ -66,6 +67,8 @@ func getFirstPage(userName string) (InstagramAPI, error) {
 func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "stream")
 
+	var wgSubWorkers sync.WaitGroup
+
 	// get media urls according to type
 	for _, media := range res.User.Media.Nodess {
 		item := DownloadItem(baseItem)
@@ -74,10 +77,16 @@ func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- Downlo
 		switch shortcode := media.Typename; shortcode {
 		case "GraphVideo":
 			go func(item DownloadItem, items chan<- DownloadItem) {
+				wgSubWorkers.Add(1)
+				defer wgSubWorkers.Done()
+
 				getVideoURL(item, items)
 			}(item, items)
 		case "GraphSidecar":
 			go func(item DownloadItem, items chan<- DownloadItem) {
+				wgSubWorkers.Add(1)
+				defer wgSubWorkers.Done()
+
 				getSidecarURLs(item, items)
 			}(item, items)
 		case "GraphImage":
@@ -90,11 +99,15 @@ func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- Downlo
 
 		}
 	}
+
+	wgSubWorkers.Wait()
 }
 
 // MediaURLs returns direct links to all media on an users stream
 func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "stream")
+
+	myLogger.Infof("Parsing %s", userName)
 
 	res, err := getFirstPage(userName)
 	if err != nil {
@@ -111,14 +124,15 @@ func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) {
 	parseFirstPage(baseItem, res, items)
 
 	if !latestOnly {
-		id, endCursor := getNextPageInfo(res)
+		userID, endCursor := getNextPageInfo(res)
 
 		page := 1
 
 		for endCursor != "" {
 			myLogger.Infof("Parsed page %d for %s", page, userName)
-			endCursor = parseNextPage(baseItem, id, endCursor, items)
+			endCursor = parseNextPage(baseItem, userID, endCursor, items)
 			page = page + 1
 		}
+		log.Infof("All %d pages done for %s", page, userName)
 	}
 }

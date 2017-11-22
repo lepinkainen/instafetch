@@ -3,6 +3,7 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -12,10 +13,12 @@ import (
 var (
 	// ID and EndCursor
 	nextPageURL = "https://www.instagram.com/graphql/query/?query_id=17888483320059182&id=%s&first=100&after=%s"
+	//nextPageURL = "https://www.instagram.com/graphql/query/?query_id=17852405266163336&id=%s&first=100&after=%s"
 
 	// QueryID: 17852405266163336
 	// 17863787143139595
 	// 17875800862117404
+	// 17888483320059182
 )
 
 type Nextpage struct {
@@ -70,16 +73,24 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 		fmt.Println(string(data))
 	}
 
+	var wgSubWorkers sync.WaitGroup
+
 	for _, image := range response.Data.Edgess {
 		item := DownloadItem(baseItem)
 		item.Shortcode = image.Shortcode
 		switch shortcode := image.Typename; shortcode {
 		case "GraphVideo":
 			go func(item DownloadItem, items chan<- DownloadItem) {
+				wgSubWorkers.Add(1)
+				defer wgSubWorkers.Done()
+
 				getVideoURL(item, items)
 			}(item, items)
 		case "GraphSidecar":
 			go func(item DownloadItem, items chan<- DownloadItem) {
+				wgSubWorkers.Add(1)
+				defer wgSubWorkers.Done()
+
 				getSidecarURLs(item, items)
 			}(item, items)
 		case "GraphImage":
@@ -90,6 +101,7 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 			myLogger.Errorf("Unknown media type: '%v'", image.Typename)
 		}
 	}
+	wgSubWorkers.Wait()
 
 	// return info about next page for looping through all pages
 	if response.Data.PageInfo.HasNextPage {
