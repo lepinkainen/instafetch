@@ -2,6 +2,7 @@ package parser
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -22,8 +23,9 @@ var (
 )
 
 type Nextpage struct {
-	Data   `json:"data"`
-	Status string `json:"status"`
+	Data    `json:"data"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 type Data struct {
@@ -51,11 +53,12 @@ func getPageImageItem(edge Edges) DownloadItem {
 }
 
 // fetches all urls from a page and returns the cursor for the next page
-func parseNextPage(baseItem DownloadItem, id string, endCursor string, items chan<- DownloadItem) string {
+func parseNextPage(baseItem DownloadItem, id string, endCursor string, items chan<- DownloadItem) (string, error) {
 	myLogger := log.WithField("module", "page")
 
 	myLogger.Debug("-- Parsing next page")
 
+	// generate url for the page
 	var url = fmt.Sprintf(nextPageURL, id, endCursor)
 
 	// interface to hold the instagram JSON
@@ -73,11 +76,16 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 		fmt.Println(string(data))
 	}
 
+	if response.Status == "fail" {
+		return "", errors.New(response.Message)
+	}
+
 	var wgSubWorkers sync.WaitGroup
 
 	for _, image := range response.Data.Edgess {
 		item := DownloadItem(baseItem)
 		item.Shortcode = image.Shortcode
+
 		switch shortcode := image.Typename; shortcode {
 		case "GraphVideo":
 			go func(item DownloadItem, items chan<- DownloadItem) {
@@ -104,9 +112,8 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 	wgSubWorkers.Wait()
 
 	// return info about next page for looping through all pages
-	if response.Data.PageInfo.HasNextPage {
-		return response.Data.PageInfo.EndCursor
+	if response.HasNextPage {
+		return response.EndCursor, nil
 	}
-
-	return ""
+	return "", nil
 }

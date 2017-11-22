@@ -64,6 +64,7 @@ func getFirstPage(userName string) (InstagramAPI, error) {
 	return response, nil
 }
 
+// parse all data from the first page
 func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "stream")
 
@@ -104,35 +105,50 @@ func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- Downlo
 }
 
 // MediaURLs returns direct links to all media on an users stream
-func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) {
-	myLogger := log.WithField("module", "stream")
+func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) error {
+	myLogger := log.WithField("module", "stream").WithField("username", userName)
 
 	myLogger.Infof("Parsing %s", userName)
 
-	res, err := getFirstPage(userName)
+	response, err := getFirstPage(userName)
 	if err != nil {
 		myLogger.Errorf("Error when parsing first page for %s", userName)
-		return
+		return err
 	}
 
 	// Basic info for items to download
 	baseItem := DownloadItem{
-		UserID: res.Username,
-		ID:     res.User.ID,
+		UserID: response.Username,
+		ID:     response.User.ID,
 	}
 
-	parseFirstPage(baseItem, res, items)
+	parseFirstPage(baseItem, response, items)
+
+	myLogger.Infof("Parsed first page for %s", userName)
 
 	if !latestOnly {
-		userID, endCursor := getNextPageInfo(res)
+		userID, endCursor := getNextPageInfo(response)
 
 		page := 1
 
+		// only fetch a new page once every X seconds
+		throttle := time.Tick(time.Second * 2)
+
 		for endCursor != "" {
-			myLogger.Infof("Parsed page %d for %s", page, userName)
-			endCursor = parseNextPage(baseItem, userID, endCursor, items)
+			endCursor, err = parseNextPage(baseItem, userID, endCursor, items)
+			if err != nil {
+				if err.Error() == "rate limited" {
+					return err
+				}
+				myLogger.Errorf("Subpage parsing error: %v", err)
+			}
 			page = page + 1
+			myLogger.Infof("Parsed page %d for %s", page, userName)
+
+			<-throttle
 		}
 		log.Infof("All %d pages done for %s", page, userName)
 	}
+
+	return nil
 }

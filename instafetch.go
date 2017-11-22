@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/lepinkainen/instafetch/parser"
@@ -23,11 +24,12 @@ import (
 
 var (
 	// command line args
-	userName = flag.String("username", "", "Username to back up")
-	update   = flag.Bool("update", false, "Update all existing downloads")
-	latest   = flag.Bool("latest", false, "Only fetch the first page of each target")
-	debug    = flag.Bool("debug", false, "Enable debug logging")
-	cron     = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
+	userName       = flag.String("username", "", "Username to back up")
+	update         = flag.Bool("update", false, "Update all existing downloads")
+	latest         = flag.Bool("latest", false, "Only fetch the first page of each target")
+	debug          = flag.Bool("debug", false, "Enable debug logging")
+	cron           = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
+	rateLimitSleep = 60
 )
 
 /*
@@ -265,7 +267,14 @@ func parseWorker(id int, latestOnly bool, jobs <-chan string, items chan<- parse
 	log.Debugf("ParseWorker %d started", id)
 	for job := range jobs {
 		log.Debugf("Parsing data for %s", job)
-		parser.MediaURLs(job, latestOnly, items)
+		err := parser.MediaURLs(job, latestOnly, items)
+		if err != nil {
+			// rate limiting activated, no sense in attempting to continue
+			if err.Error() == "rate limited" {
+				log.Errorf("Rate limiting detected, pausing for %d seconds!", rateLimitSleep)
+				time.Sleep(time.Second * time.Duration(rateLimitSleep))
+			}
+		}
 	}
 	log.Debugf("ParseWorker %d stopped", id)
 }
@@ -327,6 +336,7 @@ func main() {
 		if !*cron {
 			fmt.Println("Updating all existing sets")
 		}
+
 		// multiple accounts
 		// loop through directories in output and assume each is an userID
 		files, _ := ioutil.ReadDir(outDir)
@@ -339,6 +349,7 @@ func main() {
 		// Single account
 		users <- *userName
 	}
+	log.Info("Task queue full")
 	// all users have been added, close the channel
 	close(users)
 
@@ -346,10 +357,16 @@ func main() {
 	// this will end the range loop and the related goroutines will finish
 	go func() {
 		wgParsing.Wait()
+		if !*cron {
+			log.Info("All pages parsed, waiting for downloads to finish")
+		}
 		// All pages have been parsed, so we can close the job input channel
 		close(items)
 	}()
 
 	// Wait for downloads to complete
 	wgDownloads.Wait()
+	if !*cron {
+		log.Info("Downloads done")
+	}
 }
