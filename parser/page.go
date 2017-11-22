@@ -75,9 +75,13 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 		item.Shortcode = image.Shortcode
 		switch shortcode := image.Typename; shortcode {
 		case "GraphVideo":
-			getVideoURL(item, items)
+			go func(item DownloadItem, items chan<- DownloadItem) {
+				getVideoURL(item, items)
+			}(item, items)
 		case "GraphSidecar":
-			getSidecarURLs(item, items)
+			go func(item DownloadItem, items chan<- DownloadItem) {
+				getSidecarURLs(item, items)
+			}(item, items)
 		case "GraphImage":
 			item.Created = time.Unix(int64(image.Node.TakenAtTimestamp), 0)
 			item.URL = image.DisplayURL

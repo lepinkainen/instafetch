@@ -53,7 +53,7 @@ func getFirstPage(userName string) (InstagramAPI, error) {
 	// unmarshal the JSON to the interface
 	err = json.Unmarshal(data, &response)
 	if err != nil {
-		myLogger.Errorf("Error unmashaling JSON for user %s", userName, err.Error())
+		myLogger.Errorf("Error unmashaling JSON for user %s: %v", userName, err.Error())
 		//fmt.Println(string(data))
 		return response, err
 	}
@@ -73,9 +73,13 @@ func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- Downlo
 
 		switch shortcode := media.Typename; shortcode {
 		case "GraphVideo":
-			getVideoURL(item, items)
+			go func(item DownloadItem, items chan<- DownloadItem) {
+				getVideoURL(item, items)
+			}(item, items)
 		case "GraphSidecar":
-			getSidecarURLs(item, items)
+			go func(item DownloadItem, items chan<- DownloadItem) {
+				getSidecarURLs(item, items)
+			}(item, items)
 		case "GraphImage":
 			item.Created = time.Unix(int64(media.Date), 0)
 			item.URL = media.DisplaySrc
@@ -83,6 +87,7 @@ func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- Downlo
 			//getImageURL(media.Code, items)
 		default:
 			myLogger.Errorf("Unknown media type: '%v'", media.Typename)
+
 		}
 	}
 }

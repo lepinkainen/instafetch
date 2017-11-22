@@ -144,50 +144,6 @@ func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
 }
 
 func oldMain() {
-	flag.Parse()
-
-	// check for required variables
-	if *userName == "" && *update == false {
-		fmt.Println("Usage: ")
-		flag.PrintDefaults()
-		return
-	}
-
-	ex, err := os.Executable()
-	if err != nil {
-		panic(err)
-	}
-	cwd := path.Dir(ex)
-
-	if *debug {
-		log.SetLevel(log.DebugLevel)
-		log.Debugf("Working directory %s", cwd)
-	}
-
-	outDir := path.Join(cwd, "output")
-
-	var accounts []string
-
-	if *update {
-		if !*cron {
-			fmt.Println("Updating all existing sets:")
-		}
-		// multiple accounts
-		// loop through directories in output and assume each is an userID
-		files, _ := ioutil.ReadDir(outDir)
-		for _, f := range files {
-			if f.IsDir() {
-				if !*cron {
-					fmt.Println("  ", f.Name())
-				}
-				accounts = append(accounts, f.Name())
-			}
-		}
-	} else {
-		// Single account
-		accounts = append(accounts, *userName)
-	}
-
 	// Buffered channels for pages and files to throttle a bit
 	// Maximum number of page responses to buffer
 	pages := make(chan InstagramAPI, 10)
@@ -209,13 +165,6 @@ func oldMain() {
 		}()
 	}
 
-	// Wait for pages to be downloaded and close the channel after done
-	// this will end the range loop and the related goroutines will finish
-	go func() {
-		wgPages.Wait()
-		close(pages)
-		log.Debugln("Page channel closed")
-	}()
 
 	var wgParse sync.WaitGroup
 	wgParse.Add(1)
@@ -306,22 +255,19 @@ func init() {
 func downloadWorker(id int, outDir string, jobs <-chan parser.DownloadItem) {
 	log.Debugf("DownloadWorker %d started", id)
 	for job := range jobs {
-		err := downloadFile(job, outDir)
-		if err != nil {
-			fmt.Println("Download error")
-		}
-		fmt.Println("Download done")
+		downloadFile(job, outDir)
 	}
-	log.Infof("DownloadWorker %d stopped", id)
+
+	log.Debugf("DownloadWorker %d stopped", id)
 }
 
 func parseWorker(id int, latestOnly bool, jobs <-chan string, items chan<- parser.DownloadItem) {
 	log.Debugf("ParseWorker %d started", id)
 	for job := range jobs {
-		log.Infof("Parsing data for %s", job)
+		log.Debugf("Parsing data for %s", job)
 		parser.MediaURLs(job, latestOnly, items)
 	}
-	log.Infof("ParseWorker %d stopped", id)
+	log.Debugf("ParseWorker %d stopped", id)
 }
 
 func main() {
@@ -354,19 +300,18 @@ func main() {
 	users := make(chan string)
 	items := make(chan parser.DownloadItem, 10)
 
-	downloadWorkerCount := 5
-	pageWorkerCount := 5
-
 	// start workers for downloads
+	downloadWorkerCount := 3
 	for w := 1; w <= downloadWorkerCount; w++ {
 		go func(w int) {
 			wgDownloads.Add(1)
 			defer wgDownloads.Done()
+
 			downloadWorker(w, outDir, items)
-			fmt.Println("Downloader quit")
 		}(w)
 	}
 
+	pageWorkerCount := 3
 	// workers for page scraping
 	for w := 1; w <= pageWorkerCount; w++ {
 		go func(w int) {
@@ -374,14 +319,13 @@ func main() {
 			defer wgParsing.Done()
 
 			parseWorker(w, *latest, users, items)
-			fmt.Println("Parser quit")
 		}(w)
 	}
 
 	// Add work for parsers, which in turn will add work to the downloaders
 	if *update {
 		if !*cron {
-			fmt.Println("Updating all existing sets:")
+			fmt.Println("Updating all existing sets")
 		}
 		// multiple accounts
 		// loop through directories in output and assume each is an userID
@@ -398,10 +342,14 @@ func main() {
 	// all users have been added, close the channel
 	close(users)
 
-	wgParsing.Wait()
-	fmt.Println("----- PAGE PARSING DONE -----")
-	wgDownloads.Wait()
-	fmt.Println("----- DOWNLOADS DONE -----")
-	close(items)
+	// Wait for pages to be downloaded and close the download worker input channel after done
+	// this will end the range loop and the related goroutines will finish
+	go func() {
+		wgParsing.Wait()
+		// All pages have been parsed, so we can close the job input channel
+		close(items)
+	}()
 
+	// Wait for downloads to complete
+	wgDownloads.Wait()
 }
