@@ -263,11 +263,11 @@ func downloadWorker(id int, outDir string, jobs <-chan parser.DownloadItem) {
 	log.Debugf("DownloadWorker %d stopped", id)
 }
 
-func parseWorker(id int, latestOnly bool, jobs <-chan string, items chan<- parser.DownloadItem) {
+func parseWorker(id int, settings parser.Settings, jobs <-chan string, items chan<- parser.DownloadItem) {
 	log.Debugf("ParseWorker %d started", id)
 	for job := range jobs {
 		log.Debugf("Parsing data for %s", job)
-		err := parser.MediaURLs(job, latestOnly, items)
+		err := parser.MediaURLs(job, settings, items)
 		if err != nil {
 			// rate limiting activated, no sense in attempting to continue
 			if err.Error() == "rate limited" {
@@ -320,14 +320,19 @@ func main() {
 		}(w)
 	}
 
-	pageWorkerCount := 3
+	settings := parser.Settings{
+		Silent:     *cron,
+		LatestOnly: *latest,
+	}
+
+	pageWorkerCount := 1
 	// workers for page scraping
 	for w := 1; w <= pageWorkerCount; w++ {
 		go func(w int) {
 			wgParsing.Add(1)
 			defer wgParsing.Done()
 
-			parseWorker(w, *latest, users, items)
+			parseWorker(w, settings, users, items)
 		}(w)
 	}
 
@@ -349,7 +354,7 @@ func main() {
 		// Single account
 		users <- *userName
 	}
-	log.Info("Task queue full")
+	log.Debug("Task queue full")
 	// all users have been added, close the channel
 	close(users)
 

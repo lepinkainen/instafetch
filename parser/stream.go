@@ -24,6 +24,11 @@ type InstagramAPI struct {
 	User          `json:"user"`
 }
 
+type Settings struct {
+	LatestOnly bool
+	Silent     bool
+}
+
 func getNextPageInfo(response InstagramAPI) (string, string) {
 	if !response.User.Media.PageInfo.HasNextPage {
 		return "", ""
@@ -105,10 +110,12 @@ func parseFirstPage(baseItem DownloadItem, res InstagramAPI, items chan<- Downlo
 }
 
 // MediaURLs returns direct links to all media on an users stream
-func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) error {
+func MediaURLs(userName string, settings Settings, items chan<- DownloadItem) error {
 	myLogger := log.WithField("module", "stream").WithField("username", userName)
 
-	myLogger.Infof("Parsing %s", userName)
+	if !settings.Silent {
+		myLogger.Infof("Parsing %s", userName)
+	}
 
 	response, err := getFirstPage(userName)
 	if err != nil {
@@ -124,9 +131,11 @@ func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) erro
 
 	parseFirstPage(baseItem, response, items)
 
-	myLogger.Infof("Parsed first page for %s", userName)
+	if !settings.Silent {
+		myLogger.Infof("Parsed first page for %s", userName)
+	}
 
-	if !latestOnly {
+	if !settings.LatestOnly {
 		userID, endCursor := getNextPageInfo(response)
 
 		page := 1
@@ -143,8 +152,9 @@ func MediaURLs(userName string, latestOnly bool, items chan<- DownloadItem) erro
 				myLogger.Errorf("Subpage parsing error: %v", err)
 			}
 			page = page + 1
-			myLogger.Infof("Parsed page %d for %s", page, userName)
-
+			if !settings.Silent {
+				myLogger.Infof("Parsed page %d for %s", page, userName)
+			}
 			<-throttle
 		}
 		log.Infof("All %d pages done for %s", page, userName)
