@@ -37,7 +37,7 @@ func getVideoURL(baseItem DownloadItem, items chan<- DownloadItem) {
 	}
 
 	item := DownloadItem(baseItem)
-	item.URL = getDirectImageURL(response)
+	item.URL = getDirectVideoURL(response)
 	item.Created = time.Unix(int64(response.TakenAtTimestamp), 0) // save created as go Time
 
 	items <- item
