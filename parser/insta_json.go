@@ -14,7 +14,7 @@ type DownloadItem struct {
 }
 
 // User defines the user who has posted stuff
-type User struct {
+type user struct {
 	Biography              string      `json:"biography"`
 	BlockedByViewer        bool        `json:"blocked_by_viewer"`
 	ConnectedFbPage        interface{} `json:"connected_fb_page"`
@@ -29,7 +29,7 @@ type User struct {
 	ID                     string      `json:"id"`
 	IsPrivate              bool        `json:"is_private"`
 	IsVerified             bool        `json:"is_verified"`
-	Media                  `json:"media"`
+	media                  `json:"media"`
 	ProfilePicURL          string `json:"profile_pic_url"`
 	ProfilePicURLHd        string `json:"profile_pic_url_hd"`
 	RequestedByViewer      bool   `json:"requested_by_viewer"`
@@ -37,17 +37,17 @@ type User struct {
 }
 
 // MediaObject defines the root element of shortcode replies
-type MediaObject struct {
-	Graphql `json:"graphql"`
+type mediaObject struct {
+	graphql `json:"graphql"`
 }
 
 // Graphql response element, directly under MediaObject
-type Graphql struct {
-	ShortcodeMedia `json:"shortcode_media"`
+type graphql struct {
+	shortcodeMedia `json:"shortcode_media"`
 }
 
 // ShortcodeMedia - all media retrieved via direct shortcode link
-type ShortcodeMedia struct {
+type shortcodeMedia struct {
 	Typename                   string             `json:"__typename"`
 	CaptionIsEdited            bool               `json:"caption_is_edited"`
 	CommentsDisabled           bool               `json:"comments_disabled"`
@@ -67,38 +67,37 @@ type ShortcodeMedia struct {
 	ViewerHasLiked             bool               `json:"viewer_has_liked"`
 	ViewerHasSaved             bool               `json:"viewer_has_saved"`
 	ViewerHasSavedToCollection bool               `json:"viewer_has_saved_to_collection"`
-	DisplayResourcess          []DisplayResources `json:"display_resources"`
-	EdgeSidecarToChildren      `json:"edge_sidecar_to_children"`
+	DisplayResourcess          []displayResources `json:"display_resources"`
+	edgeSidecarToChildren      `json:"edge_sidecar_to_children"`
 }
 
 // PageInfo tells us if there is a new page after this one
-type PageInfo struct {
+type pageInfo struct {
 	EndCursor   string `json:"end_cursor"`
 	HasNextPage bool   `json:"has_next_page"`
 }
 
-// Edges is a silly intermediate struct
-type Edges struct {
-	Node `json:"node"`
+type edges struct {
+	node `json:"node"`
 }
 
-type DisplayResources struct {
+type displayResources struct {
 	ConfigHeight int    `json:"config_height"`
 	ConfigWidth  int    `json:"config_width"`
 	Src          string `json:"src"`
 }
 
-type EdgeSidecarToChildren struct {
-	Edgess []Edges `json:"edges"`
+type edgeSidecarToChildren struct {
+	Edgess []edges `json:"edges"`
 }
 
-type Media struct {
+type media struct {
 	Count    int     `json:"count"`
-	Nodess   []Nodes `json:"nodes"`
-	PageInfo `json:"page_info"`
+	Nodess   []nodes `json:"nodes"`
+	pageInfo `json:"page_info"`
 }
 
-type Nodes struct {
+type nodes struct {
 	Typename         string      `json:"__typename"`
 	Caption          string      `json:"caption"`
 	Code             string      `json:"code"`
@@ -112,14 +111,24 @@ type Nodes struct {
 	VideoViews       int         `json:"video_views"`
 }
 
-type Node struct {
+type node struct {
 	Typename           string `json:"__typename"`
 	CommentsDisabled   bool   `json:"comments_disabled"`
 	DisplayURL         string `json:"display_url"`
-	EdgeMediaToCaption `json:"edge_media_to_caption"`
+	edgeMediaToCaption `json:"edge_media_to_caption"`
 	ID                 string `json:"id"`
 	IsVideo            bool   `json:"is_video"`
 	Shortcode          string `json:"shortcode"`
 	TakenAtTimestamp   int    `json:"taken_at_timestamp"`
 	ThumbnailSrc       string `json:"thumbnail_src"`
+}
+
+type edgeMediaToCaption struct {
+	Edgess []edges `json:"edges"`
+}
+
+type edgeOwnerToTimelineMedia struct {
+	Count    int     `json:"count"`
+	Edgess   []edges `json:"edges"`
+	pageInfo `json:"page_info"`
 }

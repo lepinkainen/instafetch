@@ -13,8 +13,8 @@ var (
 	mediaURL = "https://www.instagram.com/p/%s/?__a=1" // completed with shortcode
 )
 
-func getDirectVideoURL(response MediaObject) string {
-	return response.Graphql.ShortcodeMedia.VideoURL
+func getDirectVideoURL(response mediaObject) string {
+	return response.graphql.shortcodeMedia.VideoURL
 }
 
 // GetVideoURL parses a video page and returns the direct video URL
@@ -22,7 +22,7 @@ func getVideoURL(baseItem DownloadItem, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "video")
 	var url = fmt.Sprintf(mediaURL, baseItem.Shortcode)
 
-	var response MediaObject
+	var response mediaObject
 
 	data, err := worker.GetPage(url)
 	if err != nil {

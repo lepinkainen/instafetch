@@ -8,8 +8,8 @@ import (
 	"github.com/lepinkainen/instafetch/worker"
 )
 
-func getDirectImageURL(response MediaObject) string {
-	return response.Graphql.ShortcodeMedia.DisplayURL
+func getDirectImageURL(response mediaObject) string {
+	return response.graphql.shortcodeMedia.DisplayURL
 }
 
 // GetImageURL returns image URL from shortcode
@@ -17,7 +17,7 @@ func getImageURL(shortcode string, items chan<- DownloadItem) {
 	myLogger := log.WithField("module", "image")
 	var url = fmt.Sprintf(mediaURL, shortcode)
 
-	var response MediaObject
+	var response mediaObject
 
 	data, err := worker.GetPage(url)
 	if err != nil {

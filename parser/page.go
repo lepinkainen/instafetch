@@ -22,31 +22,21 @@ var (
 	// 17888483320059182
 )
 
-type Nextpage struct {
-	Data    `json:"data"`
+type nextpage struct {
+	data    `json:"data"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
 }
 
-type Data struct {
-	NextPageUser `json:"user"`
+type data struct {
+	nextPageUser `json:"user"`
 }
 
-type NextPageUser struct {
-	EdgeOwnerToTimelineMedia `json:"edge_owner_to_timeline_media"`
+type nextPageUser struct {
+	edgeOwnerToTimelineMedia `json:"edge_owner_to_timeline_media"`
 }
 
-type EdgeOwnerToTimelineMedia struct {
-	Count    int     `json:"count"`
-	Edgess   []Edges `json:"edges"`
-	PageInfo `json:"page_info"`
-}
-
-type EdgeMediaToCaption struct {
-	Edgess []Edges `json:"edges"`
-}
-
-func getPageImageItem(edge Edges) DownloadItem {
+func getPageImageItem(edge edges) DownloadItem {
 	return DownloadItem{
 		URL: edge.DisplayURL,
 	}
@@ -62,7 +52,7 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 	var url = fmt.Sprintf(nextPageURL, id, endCursor)
 
 	// interface to hold the instagram JSON
-	var response Nextpage
+	var response nextpage
 
 	data, err := worker.GetPage(url)
 	if err != nil {
@@ -82,7 +72,7 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 
 	var wgSubWorkers sync.WaitGroup
 
-	for _, image := range response.Data.Edgess {
+	for _, image := range response.data.Edgess {
 		item := DownloadItem(baseItem)
 		item.Shortcode = image.Shortcode
 
@@ -102,7 +92,7 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 				getSidecarURLs(item, items)
 			}(item, items)
 		case "GraphImage":
-			item.Created = time.Unix(int64(image.Node.TakenAtTimestamp), 0)
+			item.Created = time.Unix(int64(image.node.TakenAtTimestamp), 0)
 			item.URL = image.DisplayURL
 			items <- item
 		default:
