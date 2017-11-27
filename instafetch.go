@@ -131,7 +131,7 @@ func main() {
 	flag.Parse()
 
 	// check for required variables
-	if *userName == "" && *update == false {
+	if *userName == "" && !*update {
 		fmt.Println("Usage: ")
 		flag.PrintDefaults()
 		return
@@ -159,8 +159,8 @@ func main() {
 
 	// start workers for downloads
 	for w := 1; w <= downloadWorkerCount; w++ {
+		wgDownloads.Add(1)
 		go func(w int) {
-			wgDownloads.Add(1)
 			defer wgDownloads.Done()
 
 			downloadWorker(w, outDir, items)
@@ -174,8 +174,8 @@ func main() {
 
 	// workers for page scraping
 	for w := 1; w <= pageWorkerCount; w++ {
+		wgParsing.Add(1)
 		go func(w int) {
-			wgParsing.Add(1)
 			defer wgParsing.Done()
 
 			parseWorker(w, settings, users, items)
