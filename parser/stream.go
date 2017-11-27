@@ -30,6 +30,8 @@ type Settings struct {
 	Silent     bool
 }
 
+// getNextPageInfo returns the user ID and endcursor for the next page
+// or empty strings if none exist
 func getNextPageInfo(response instagramAPI) (string, string) {
 
 	if !response.user.media.pageInfo.HasNextPage {

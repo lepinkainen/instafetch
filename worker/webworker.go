@@ -40,7 +40,7 @@ func GetPage(url string) ([]byte, error) {
 	}
 
 	if body[0] == '<' {
-		return body, errors.New("Received HTML content")
+		return nil, errors.New("Received HTML content")
 	}
 
 	return body, nil
