@@ -5,8 +5,12 @@ go:
   - 1.9
   - master
 
+install:
+  - go get -u github.com/golang/dep/cmd/dep
+  - dep ensure -v
+
 env:
-    - GOOS=linux GOARCH=amd64
+  - GOOS=linux GOARCH=amd64
 
 matrix:
   # It's ok if our code fails on unstable development versions of Go.
