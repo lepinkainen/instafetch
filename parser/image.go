@@ -1,16 +1,11 @@
 package parser
 
-import (
-	"encoding/json"
-	"fmt"
-
-	log "github.com/Sirupsen/logrus"
-	"github.com/lepinkainen/instafetch/worker"
-)
-
 func getDirectImageURL(response mediaObject) string {
 	return response.graphql.shortcodeMedia.DisplayURL
 }
+
+/*
+// Not used at the moment
 
 // GetImageURL returns image URL from shortcode
 func getImageURL(shortcode string, items chan<- DownloadItem) {
@@ -39,3 +34,4 @@ func getImageURL(shortcode string, items chan<- DownloadItem) {
 
 	myLogger.Debugf("Got image from shortcode %s", shortcode)
 }
+*/

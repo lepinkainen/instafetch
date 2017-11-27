@@ -36,11 +36,13 @@ type nextPageUser struct {
 	edgeOwnerToTimelineMedia `json:"edge_owner_to_timeline_media"`
 }
 
+/*
 func getPageImageItem(edge edges) DownloadItem {
 	return DownloadItem{
 		URL: edge.DisplayURL,
 	}
 }
+*/
 
 // fetches all urls from a page and returns the cursor for the next page
 func parseNextPage(baseItem DownloadItem, id string, endCursor string, items chan<- DownloadItem) (string, error) {
@@ -78,15 +80,15 @@ func parseNextPage(baseItem DownloadItem, id string, endCursor string, items cha
 
 		switch shortcode := image.Typename; shortcode {
 		case "GraphVideo":
+			wgSubWorkers.Add(1)
 			go func(item DownloadItem, items chan<- DownloadItem) {
-				wgSubWorkers.Add(1)
 				defer wgSubWorkers.Done()
 
 				getVideoURL(item, items)
 			}(item, items)
 		case "GraphSidecar":
+			wgSubWorkers.Add(1)
 			go func(item DownloadItem, items chan<- DownloadItem) {
-				wgSubWorkers.Add(1)
 				defer wgSubWorkers.Done()
 
 				getSidecarURLs(item, items)

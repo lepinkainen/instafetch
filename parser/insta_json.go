@@ -112,21 +112,22 @@ type nodes struct {
 }
 
 type node struct {
-	Typename           string `json:"__typename"`
-	CommentsDisabled   bool   `json:"comments_disabled"`
-	DisplayURL         string `json:"display_url"`
-	edgeMediaToCaption `json:"edge_media_to_caption"`
-	ID                 string `json:"id"`
-	IsVideo            bool   `json:"is_video"`
-	Shortcode          string `json:"shortcode"`
-	TakenAtTimestamp   int    `json:"taken_at_timestamp"`
-	ThumbnailSrc       string `json:"thumbnail_src"`
+	Typename         string `json:"__typename"`
+	CommentsDisabled bool   `json:"comments_disabled"`
+	DisplayURL       string `json:"display_url"`
+	//	edgeMediaToCaption `json:"edge_media_to_caption"`
+	ID               string `json:"id"`
+	IsVideo          bool   `json:"is_video"`
+	Shortcode        string `json:"shortcode"`
+	TakenAtTimestamp int    `json:"taken_at_timestamp"`
+	ThumbnailSrc     string `json:"thumbnail_src"`
 }
 
+/*
 type edgeMediaToCaption struct {
 	Edgess []edges `json:"edges"`
 }
-
+*/
 type edgeOwnerToTimelineMedia struct {
 	Count    int     `json:"count"`
 	Edgess   []edges `json:"edges"`

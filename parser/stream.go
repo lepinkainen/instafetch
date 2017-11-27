@@ -86,15 +86,15 @@ func parseFirstPage(baseItem DownloadItem, res instagramAPI, items chan<- Downlo
 
 		switch shortcode := media.Typename; shortcode {
 		case "GraphVideo":
+			wgSubWorkers.Add(1)
 			go func(item DownloadItem, items chan<- DownloadItem) {
-				wgSubWorkers.Add(1)
 				defer wgSubWorkers.Done()
 
 				getVideoURL(item, items)
 			}(item, items)
 		case "GraphSidecar":
+			wgSubWorkers.Add(1)
 			go func(item DownloadItem, items chan<- DownloadItem) {
-				wgSubWorkers.Add(1)
 				defer wgSubWorkers.Done()
 
 				getSidecarURLs(item, items)
@@ -103,7 +103,6 @@ func parseFirstPage(baseItem DownloadItem, res instagramAPI, items chan<- Downlo
 			item.Created = time.Unix(int64(media.Date), 0)
 			item.URL = media.DisplaySrc
 			items <- item
-			//getImageURL(media.Code, items)
 		default:
 			myLogger.Errorf("Unknown media type: '%v'", media.Typename)
 
@@ -145,7 +144,7 @@ func MediaURLs(userName string, settings Settings, items chan<- DownloadItem) er
 		page := 1
 
 		// only fetch a new page once every X seconds
-		throttle := time.Tick(time.Second * 2)
+		throttle := time.NewTicker(time.Second * 2).C
 
 		for endCursor != "" {
 			endCursor, err = parseNextPage(baseItem, userID, endCursor, items)
