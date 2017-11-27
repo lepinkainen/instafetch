@@ -24,167 +24,15 @@ import (
 
 var (
 	// command line args
-	userName       = flag.String("username", "", "Username to back up")
-	update         = flag.Bool("update", false, "Update all existing downloads")
-	latest         = flag.Bool("latest", false, "Only fetch the first page of each target")
-	debug          = flag.Bool("debug", false, "Enable debug logging")
-	cron           = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
-	rateLimitSleep = 60
+	userName            = flag.String("username", "", "Username to back up")
+	update              = flag.Bool("update", false, "Update all existing downloads")
+	latest              = flag.Bool("latest", false, "Only fetch the first page of each target")
+	debug               = flag.Bool("debug", false, "Enable debug logging")
+	cron                = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
+	rateLimitSleep      = 60
+	downloadWorkerCount = 3
+	pageWorkerCount     = 1 // anything above 1 here tends to trigger instagram's flood protection
 )
-
-/*
-// getPages retrieves all pages for given user and returns them
-// to the given channel as InstagramAPI objects
-func getPages(userName string, c chan<- InstagramAPI) {
-	var pageCount = 1
-
-	// get the first page and send it forward immediately
-	response := parsePage(userName, "")
-
-	if len(response.Items) == 0 && response.MoreAvailable == false {
-		log.Errorf("User page is private for %s", userName)
-		return
-	}
-
-	c <- response
-
-	if *latest {
-		if !*cron {
-			log.Infof("Only fetching latest page for %s", userName)
-		}
-		return
-	}
-
-	for {
-
-		lastID := ""
-		// Get last ID on this page
-		if len(response.Items) > 1 {
-			lastID = response.Items[len(response.Items)-1].ID
-		}
-		// fetch next page
-		response = parsePage(userName, lastID)
-
-		pageCount = pageCount + 1
-
-		log.Printf("Got page %d for %s", pageCount, userName)
-
-		// An error during parsePage will return an empty interface
-		if len(response.Items) == 0 {
-			continue
-		} else {
-			// send found page response to channel
-			c <- response
-		}
-
-		// no more pages, stop
-		if !response.MoreAvailable {
-			break
-		}
-	}
-
-	if !*cron {
-		log.Printf("Parsed %d pages for %s", pageCount, userName)
-	}
-}
-*/
-
-/*
-// Takes an InstagramAPI response and parses images it finds to DownloadItems
-func parseMediaURLs(in <-chan InstagramAPI, out chan<- DownloadItem) {
-	var url string
-	var userName string
-
-	for response := range in {
-		userName = response.Items[0].User.Username
-		for _, item := range response.Items {
-
-			// CreatedTime is an unix timestamp in string format
-			i, err := strconv.ParseInt(item.CreatedTime, 10, 64)
-			if err != nil {
-				log.Panicln("Could not parse CreatedTime")
-			}
-
-			switch item.Type {
-			case "image":
-				url = item.Images.StandardResolution.URL
-				// Fix up the URL to return the full res image
-				url = strings.Replace(url, "s640x640/", "", -1)
-			case "video":
-				url = item.Videos.StandardResolution.URL
-			case "carousel":
-				for _, subItem := range item.CarouselMedia {
-					switch subItem.Type {
-					case "image":
-						url = subItem.Images.StandardResolution.URL
-						url = strings.Replace(url, "s640x640/", "", -1)
-					case "video":
-						url = subItem.Videos.StandardResolution.URL
-					default:
-						log.Warningf("Unknown subtype: %s for user %s ", item.Type, userName)
-					}
-
-					item := DownloadItem{}
-					item.URL = url
-					item.userID = userName
-					item.created = time.Unix(i, 0) // save created as go Time
-					out <- item
-				}
-				// the whole carousel has been sent for downloading, continue to the next main item
-				continue
-			default:
-				log.Warningf("Unknown type: %s for user %s ", item.Type, userName)
-			}
-
-			item := DownloadItem{}
-			item.URL = url
-			item.userID = userName
-			item.created = time.Unix(i, 0) // save created as go Time
-			out <- item
-		}
-	}
-}
-
-func oldMain() {
-	// Buffered channels for pages and files to throttle a bit
-	// Maximum number of page responses to buffer
-	pages := make(chan InstagramAPI, 10)
-	// Resolved and parsed actual DownloadItems
-	files := make(chan DownloadItem, 200)
-
-	var wgPages sync.WaitGroup
-
-	// launch a goroutine for each account to fetch the pages
-	// the buffered pages-channel will limit hammering on the server
-	// combined with the single-threaded download operation
-	for _, userName := range accounts {
-		userName := userName // copy the variable to a new memory location
-		go func() {
-			// Use WaitGroup to track when all page goroutines are ready
-			wgPages.Add(1)
-			getPages(userName, pages)
-			wgPages.Done()
-		}()
-	}
-
-
-	var wgParse sync.WaitGroup
-	wgParse.Add(1)
-	// grab instagram api responses and produce a list to files to download
-	go func() {
-		parseMediaURLs(pages, files)
-		wgParse.Done()
-	}()
-
-	go func() {
-		wgParse.Wait()
-		close(files)
-		log.Debugln("File channel closed")
-	}()
-
-	downloadFiles(files, outDir)
-}
-*/
 
 // downloadFile gets a single file defined by DownloadItem to outputFolder
 func downloadFile(item parser.DownloadItem, outputFolder string) error {
@@ -208,7 +56,7 @@ func downloadFile(item parser.DownloadItem, outputFolder string) error {
 
 	// Create output file and check for its existence at the same time - no race conditions
 	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
-	out, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	out, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
 	if os.IsExist(err) {
 		log.Debugln("Already downloaded: ", filename)
 		return nil
@@ -310,7 +158,6 @@ func main() {
 	items := make(chan parser.DownloadItem, 10)
 
 	// start workers for downloads
-	downloadWorkerCount := 3
 	for w := 1; w <= downloadWorkerCount; w++ {
 		go func(w int) {
 			wgDownloads.Add(1)
@@ -325,7 +172,6 @@ func main() {
 		LatestOnly: *latest,
 	}
 
-	pageWorkerCount := 1
 	// workers for page scraping
 	for w := 1; w <= pageWorkerCount; w++ {
 		go func(w int) {
