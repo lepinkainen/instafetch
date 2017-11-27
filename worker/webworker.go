@@ -9,6 +9,8 @@ import (
 	"net/http"
 )
 
+// GetPage returns a byte array of the given url's contents
+// It also does a feeble attempt at impersonating some browser headers
 func GetPage(url string) ([]byte, error) {
 
 	client := &http.Client{}
