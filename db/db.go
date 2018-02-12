@@ -11,7 +11,7 @@ import (
 // initialize database table in sqlite
 func initDB(db *sql.DB) bool {
 	// ID, username and timestamp the user was added to the cooldown list
-	sqlStmt := "create table cooldown (id integer not null primary key, username text, timestamp datetime default current_timestmp);"
+	sqlStmt := "create table cooldown (id integer not null primary key, username text, start_time datetime not null);"
 
 	_, err := db.Exec(sqlStmt)
 	if err != nil {
@@ -32,7 +32,7 @@ func addToCooldown(db *sql.DB, username string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt, err := tx.Prepare("insert into cooldown(username) values(?)")
+	stmt, err := tx.Prepare("insert into cooldown(username, start_time) values(?, datetime('now'))")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func checkCooldown(db *sql.DB, username string) bool {
 }
 
 func resetCooldown(db *sql.DB, username string) bool {
-	stmt, err := db.Prepare("delete from cooldown where username = ?")
+	stmt, err := db.Prepare("delete from cooldown where TODO SOMETHING")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,6 +82,10 @@ func resetCooldown(db *sql.DB, username string) bool {
 		return true
 	}
 	return false
+}
+
+func expireCooldown(db *sql.DB) {
+
 }
 
 func main() {
