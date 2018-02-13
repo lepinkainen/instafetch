@@ -1,10 +1,11 @@
 package parser
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 
 	"encoding/json"
 	"fmt"
@@ -122,7 +123,7 @@ func MediaURLs(userName string, settings Settings, items chan<- DownloadItem) er
 
 	response, err := getFirstPage(userName)
 	if err != nil {
-		myLogger.Errorf("Error when parsing first page for %s", userName)
+		myLogger.Errorf("Error when parsing first page for %s: %v", userName, err)
 		return err
 	}
 
@@ -144,7 +145,10 @@ func MediaURLs(userName string, settings Settings, items chan<- DownloadItem) er
 		page := 1
 
 		// only fetch a new page once every X seconds
-		throttle := time.NewTicker(time.Second * 2).C
+		r := rand.Intn(3)
+		// 500ms * 1-4 = 0,5sec to 2sec delay
+		delay := (500 * time.Millisecond) * time.Duration(r+1)
+		throttle := time.NewTicker(delay).C
 
 		for endCursor != "" {
 			endCursor, err = parseNextPage(baseItem, userID, endCursor, items)

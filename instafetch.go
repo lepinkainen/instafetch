@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"path"
@@ -15,8 +16,9 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/lepinkainen/instafetch/db"
 	"github.com/lepinkainen/instafetch/parser"
+	log "github.com/sirupsen/logrus"
 
 	"flag"
 	"os"
@@ -29,6 +31,7 @@ var (
 	latest              = flag.Bool("latest", false, "Only fetch the first page of each target")
 	debug               = flag.Bool("debug", false, "Enable debug logging")
 	cron                = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
+	random              = flag.Bool("random", false, "Randomize the download order for multiple items")
 	rateLimitSleep      = 60
 	downloadWorkerCount = 3
 	pageWorkerCount     = 1 // anything above 1 here tends to trigger instagram's flood protection
@@ -122,9 +125,26 @@ func parseWorker(id int, settings parser.Settings, jobs <-chan string, items cha
 				log.Errorf("Rate limiting detected, pausing for %d seconds!", rateLimitSleep)
 				time.Sleep(time.Second * time.Duration(rateLimitSleep))
 			}
+			if err.Error() == "Received HTML content" {
+				conn := db.GetConnection()
+				log.Infof("Added %s to cooldown", job)
+				db.AddCooldown(conn, job)
+				conn.Close()
+			}
 		}
 	}
 	log.Debugf("ParseWorker %d stopped", id)
+}
+
+func shuffle(slice []string) []string {
+	rand.Seed(time.Now().UnixNano())
+	n := len(slice)
+	for i := n - 1; i > 0; i-- {
+		j := rand.Intn(i + 1)
+		slice[i], slice[j] = slice[j], slice[i]
+	}
+
+	return slice
 }
 
 func main() {
@@ -182,20 +202,45 @@ func main() {
 		}(w)
 	}
 
+	// reset cooldowns where applicable
+	conn := db.GetConnection()
+	db.ResetCooldown(conn)
+	conn.Close()
+
 	// Add work for parsers, which in turn will add work to the downloaders
 	if *update {
 		if !*cron {
 			fmt.Println("Updating all existing sets")
 		}
 
+		userNames := []string{}
+
 		// multiple accounts
 		// loop through directories in output and assume each is an userID
 		files, _ := ioutil.ReadDir(outDir)
 		for _, f := range files {
 			if f.IsDir() {
-				users <- f.Name()
+				userNames = append(userNames, f.Name())
 			}
 		}
+
+		// randomize username list to prevent hitting the limiter at the
+		// exact same spots
+		if *random {
+			userNames = shuffle(userNames)
+		}
+
+		conn := db.GetConnection()
+		for _, name := range userNames {
+			// skip users who seem to produce errors all the time
+			if !(db.CheckCooldown(conn, name)) {
+				users <- name
+			} else {
+				log.Infof("%s is on cooldown, skipping check", name)
+			}
+		}
+		conn.Close()
+
 	} else {
 		// Single account
 		users <- *userName

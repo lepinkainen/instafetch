@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/lepinkainen/instafetch/worker"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
