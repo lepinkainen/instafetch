@@ -97,7 +97,7 @@ func parseStream(user User, cursor string) (User, error) {
 
 	// recurse downwards if there are more pages
 	if hasNext {
-		myLog.Infof("Parsing next page (%d nodes parsed)", len(user.Nodes))
+		myLog.Infof("Parsing next page (%4d nodes parsed)", len(user.Nodes))
 
 		var err error
 		user, err = parseStream(user, newCursor)

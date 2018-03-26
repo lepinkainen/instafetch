@@ -7,10 +7,12 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/lepinkainen/instafetch/parser"
 	log "github.com/sirupsen/logrus"
@@ -153,11 +155,42 @@ func main() {
 		LatestOnly: *latest,
 	}
 
-	user, _ := parser.ParseUser(*userName, settings)
+	users := make(chan string)
 
-	for _, node := range user.Nodes {
-		downloadFile(user, node, outDir)
+	var wgParsing sync.WaitGroup
+
+	go func() {
+		wgParsing.Add(1)
+		defer wgParsing.Done()
+		for uname := range users {
+			user, _ := parser.ParseUser(uname, settings)
+
+			for _, node := range user.Nodes {
+				downloadFile(user, node, outDir)
+			}
+		}
+	}()
+
+	if *update {
+		if !*cron {
+			fmt.Println("Updating all existing sets")
+		}
+
+		// multiple accounts
+		// loop through directories in output and assume each is an userID
+		files, _ := ioutil.ReadDir(outDir)
+		for _, f := range files {
+			if f.IsDir() {
+				users <- f.Name()
+			}
+		}
+	} else {
+		// Single account
+		users <- *userName
 	}
+	close(users)
+
+	wgParsing.Wait()
 
 	/*
 		var wgDownloads sync.WaitGroup
