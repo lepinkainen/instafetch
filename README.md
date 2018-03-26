@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/lepinkainen/instafetch.svg?branch=master)](https://travis-ci.org/lepinkainen/instafetch)
+
 # instafetch
 Fetch instagram images without using the Instagram API
 
