@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/lepinkainen/instafetch/parser"
+	log "github.com/sirupsen/logrus"
 
 	"flag"
 	"os"
@@ -35,11 +35,11 @@ var (
 )
 
 // downloadFile gets a single file defined by DownloadItem to outputFolder
-func downloadFile(item parser.DownloadItem, outputFolder string) error {
+func downloadFile(user parser.User, item parser.Node, outputFolder string) error {
 	var filename string
 
 	// create download dir for the account
-	os.MkdirAll(path.Join(outputFolder, item.UserID), 0766)
+	os.MkdirAll(path.Join(outputFolder, user.Username), 0766)
 
 	url, err := url.Parse(item.URL)
 	if err != nil {
@@ -50,19 +50,19 @@ func downloadFile(item parser.DownloadItem, outputFolder string) error {
 	filename = tokens[len(tokens)-1]
 	// Prepend the date the image was added to instagram and username to the file for additional metadata
 	// example output: 2017-11-05_alexandrabring_22860351_504365496598712_7456505757811343360_n.jpg
-	created := item.Created.UTC().Format("2006-01-02")
-	filename = fmt.Sprintf("%s_%s_%s", created, item.UserID, filename)
-	filename = path.Join(outputFolder, item.UserID, filename)
+	created := item.Timestamp.UTC().Format("2006-01-02")
+	filename = fmt.Sprintf("%s_%s_%s", created, user.Username, filename)
+	filename = path.Join(outputFolder, user.Username, filename)
 
 	// Create output file and check for its existence at the same time - no race conditions
 	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
 	out, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
 	if os.IsExist(err) {
-		log.Debugln("Already downloaded: ", filename)
+		log.Debugf("Already downloaded: %s", filename)
 		return nil
 	}
 	if err != nil {
-		log.Errorln("Error when opening file for saving: ", err.Error())
+		log.Errorln("Error when opening file for saving: %v", err)
 		return err
 	}
 	defer out.Close()
@@ -70,7 +70,7 @@ func downloadFile(item parser.DownloadItem, outputFolder string) error {
 	// download the file
 	resp, err := http.Get(item.URL)
 	if err != nil {
-		log.Errorln("Error when downloading: ", err.Error())
+		log.Errorf("Error when downloading: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
@@ -78,7 +78,7 @@ func downloadFile(item parser.DownloadItem, outputFolder string) error {
 	// streams file to disk
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		log.Printf("Could not write file to disk %s", err.Error())
+		log.Errorf("Could not write file to disk %v", err)
 		return err
 	}
 	if !*cron {
@@ -150,12 +150,26 @@ func main() {
 
 	outDir := path.Join(cwd, "output")
 
-	var wgDownloads sync.WaitGroup
+	settings := parser.Settings{
+		Silent:     *cron,
+		LatestOnly: *latest,
+	}
+
+	users := make(chan string)
+
 	var wgParsing sync.WaitGroup
 
-	// channel for urls, buffered
-	users := make(chan string)
-	items := make(chan parser.DownloadItem, 10)
+	go func() {
+		wgParsing.Add(1)
+		defer wgParsing.Done()
+		for uname := range users {
+			user, _ := parser.ParseUser(uname, settings)
+
+			for _, node := range user.Nodes {
+				downloadFile(user, node, outDir)
+			}
+		}
+	}()
 
 	// start workers for downloads
 	for w := 1; w <= downloadWorkerCount; w++ {
@@ -200,23 +214,10 @@ func main() {
 		// Single account
 		users <- *userName
 	}
-	log.Debug("Task queue full")
-	// all users have been added, close the channel
 	close(users)
 
-	// Wait for pages to be downloaded and close the download worker input channel after done
-	// this will end the range loop and the related goroutines will finish
-	go func() {
-		wgParsing.Wait()
-		if !*cron {
-			log.Info("All pages parsed, waiting for downloads to finish")
-		}
-		// All pages have been parsed, so we can close the job input channel
-		close(items)
-	}()
+	wgParsing.Wait()
 
-	// Wait for downloads to complete
-	wgDownloads.Wait()
 	if !*cron {
 		log.Info("Downloads done")
 	}

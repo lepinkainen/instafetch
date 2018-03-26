@@ -1,40 +1,54 @@
 package parser
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/lepinkainen/instafetch/worker"
+	"github.com/tidwall/gjson"
 )
 
-// GetCarouselURLs parses a video page and returns the direct video URL
-func getSidecarURLs(baseItem DownloadItem, items chan<- DownloadItem) {
-	myLogger := log.WithField("module", "sidecar")
-	var url = fmt.Sprintf(mediaURL, baseItem.Shortcode)
+// Parse a GraphSidecar image
+func parseSidecarImage(node gjson.Result) (Node, error) {
 
-	var response mediaObject
+	result := Node{}
+	result.URL = node.Get("display_url").Str
+	result.MediaType = node.Get("__typename").Str
+	result.Shortcode = node.Get("shortcode").Str
+	result.IsVideo = node.Get("is_video").Bool()
 
-	data, err := worker.GetPage(url)
+	return result, nil
+}
+
+// Fetch and parse a GraphSidecar node
+func parseGraphSidecar(shortCode string) ([]Node, error) {
+	root, err := getPageJSON(shortCode)
 	if err != nil {
-		myLogger.Errorln("Error fetching page", err.Error())
+		fmt.Errorf("Error fetching sidecar page %s, %v", shortCode, err)
+		return []Node{}, err
+	}
+	rootNode := root.Get("graphql.shortcode_media")
+
+	result := []Node{}
+
+	nodes := rootNode.Get("edge_sidecar_to_children.edges")
+
+	timestamp := time.Unix(rootNode.Get("taken_at_timestamp").Int(), 0)
+
+	// Go through the nodes
+	for _, node := range nodes.Array() {
+		typeName := node.Get("node.__typename").Str
+		shortCode := node.Get("node.shortcode").Str
+
+		switch typeName {
+		case "GraphImage":
+			res, _ := parseSidecarImage(node.Get("node"))
+			// sidecars don't have separate timestamps, use the root's time
+			res.Timestamp = timestamp
+			result = append(result, res)
+		default:
+			fmt.Errorf("Uknown sidecar type '%v' for shortcode '%s'", typeName, shortCode)
+		}
 	}
 
-	// unmarshal the JSON to the interface
-	err = json.Unmarshal(data, &response)
-	if err != nil {
-		myLogger.Errorln("Error unmashaling JSON", err.Error())
-		fmt.Println(string(data))
-	}
-
-	for _, image := range response.graphql.edgeSidecarToChildren.Edgess {
-		item := DownloadItem(baseItem)
-		item.URL = image.node.DisplayURL
-		item.Created = time.Unix(int64(response.graphql.TakenAtTimestamp), 0) // save created as go Time
-
-		items <- item
-	}
-
-	myLogger.Debugf("Got carousel images from shortcode %s", baseItem.Shortcode)
+	return result, nil
 }
