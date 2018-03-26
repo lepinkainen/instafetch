@@ -23,14 +23,16 @@ import (
 
 var (
 	// command line args
-	userName            = flag.String("username", "", "Username to back up")
-	update              = flag.Bool("update", false, "Update all existing downloads")
-	latest              = flag.Bool("latest", false, "Only fetch the first page of each target")
-	debug               = flag.Bool("debug", false, "Enable debug logging")
-	cron                = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
-	rateLimitSleep      = 60
-	downloadWorkerCount = 3
-	pageWorkerCount     = 1 // anything above 1 here tends to trigger instagram's flood protection
+	userName = flag.String("username", "", "Username to back up")
+	update   = flag.Bool("update", false, "Update all existing downloads")
+	latest   = flag.Bool("latest", false, "Only fetch the first page of each target")
+	debug    = flag.Bool("debug", false, "Enable debug logging")
+	cron     = flag.Bool("cron", false, "Silent run for running from cron (most useful with --latest)")
+	/*
+		rateLimitSleep      = 60
+		downloadWorkerCount = 3
+		pageWorkerCount     = 1 // anything above 1 here tends to trigger instagram's flood protection
+	*/
 )
 
 // downloadFile gets a single file defined by DownloadItem to outputFolder
@@ -133,8 +135,8 @@ func main() {
 
 	var wgParsing sync.WaitGroup
 
+	wgParsing.Add(1)
 	go func() {
-		wgParsing.Add(1)
 		defer wgParsing.Done()
 		for uname := range users {
 			user, _ := parser.ParseUser(uname, settings)
