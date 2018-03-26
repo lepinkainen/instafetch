@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/lepinkainen/instafetch.svg?branch=master)](https://travis-ci.org/lepinkainen/instafetch)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lepinkainen/instafetch)](https://goreportcard.com/report/github.com/lepinkainen/instafetch)[![Build Status](https://travis-ci.org/lepinkainen/instafetch.svg?branch=master)](https://travis-ci.org/lepinkainen/instafetch)
 
 # instafetch
 Fetch instagram images without using the Instagram API
