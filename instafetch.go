@@ -101,32 +101,6 @@ func init() {
 	}
 }
 
-/*
-func downloadWorker(id int, outDir string, jobs <-chan parser.DownloadItem) {
-	log.Debugf("DownloadWorker %d started", id)
-	for job := range jobs {
-		downloadFile(job, outDir)
-	}
-
-	log.Debugf("DownloadWorker %d stopped", id)
-}
-
-func parseWorker(id int, settings parser.Settings, jobs <-chan string, items chan<- parser.DownloadItem) {
-	log.Debugf("ParseWorker %d started", id)
-	for job := range jobs {
-		log.Debugf("Parsing data for %s", job)
-		err := parser.MediaURLs(job, settings, items)
-		if err != nil {
-			// rate limiting activated, no sense in attempting to continue
-			if err.Error() == "rate limited" {
-				log.Errorf("Rate limiting detected, pausing for %d seconds!", rateLimitSleep)
-				time.Sleep(time.Second * time.Duration(rateLimitSleep))
-			}
-		}
-	}
-	log.Debugf("ParseWorker %d stopped", id)
-}
-*/
 func main() {
 	flag.Parse()
 
@@ -192,76 +166,7 @@ func main() {
 
 	wgParsing.Wait()
 
-	/*
-		var wgDownloads sync.WaitGroup
-		var wgParsing sync.WaitGroup
-
-		// channel for urls, buffered
-		users := make(chan string)
-		items := make(chan parser.DownloadItem, 10)
-
-		// start workers for downloads
-		for w := 1; w <= downloadWorkerCount; w++ {
-			wgDownloads.Add(1)
-			go func(w int) {
-				defer wgDownloads.Done()
-
-				downloadWorker(w, outDir, items)
-			}(w)
-		}
-
-		settings := parser.Settings{
-			Silent:     *cron,
-			LatestOnly: *latest,
-		}
-
-		// workers for page scraping
-		for w := 1; w <= pageWorkerCount; w++ {
-			wgParsing.Add(1)
-			go func(w int) {
-				defer wgParsing.Done()
-
-				parseWorker(w, settings, users, items)
-			}(w)
-		}
-
-		// Add work for parsers, which in turn will add work to the downloaders
-		if *update {
-			if !*cron {
-				fmt.Println("Updating all existing sets")
-			}
-
-			// multiple accounts
-			// loop through directories in output and assume each is an userID
-			files, _ := ioutil.ReadDir(outDir)
-			for _, f := range files {
-				if f.IsDir() {
-					users <- f.Name()
-				}
-			}
-		} else {
-			// Single account
-			users <- *userName
-		}
-		log.Debug("Task queue full")
-		// all users have been added, close the channel
-		close(users)
-
-		// Wait for pages to be downloaded and close the download worker input channel after done
-		// this will end the range loop and the related goroutines will finish
-		go func() {
-			wgParsing.Wait()
-			if !*cron {
-				log.Info("All pages parsed, waiting for downloads to finish")
-			}
-			// All pages have been parsed, so we can close the job input channel
-			close(items)
-		}()
-
-		// Wait for downloads to complete
-		wgDownloads.Wait()
-		if !*cron {
-			log.Info("Downloads done")
-		}
-	*/
+	if !*cron {
+		log.Info("Downloads done")
+	}
 }
