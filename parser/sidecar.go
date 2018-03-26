@@ -1,9 +1,9 @@
 package parser
 
 import (
-	"fmt"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 )
 
@@ -23,7 +23,7 @@ func parseSidecarImage(node gjson.Result) (Node, error) {
 func parseGraphSidecar(shortCode string) ([]Node, error) {
 	root, err := getPageJSON(shortCode)
 	if err != nil {
-		fmt.Errorf("Error fetching sidecar page %s, %v", shortCode, err)
+		log.Errorf("Error fetching sidecar page %s, %v", shortCode, err)
 		return []Node{}, err
 	}
 	rootNode := root.Get("graphql.shortcode_media")
@@ -46,7 +46,7 @@ func parseGraphSidecar(shortCode string) ([]Node, error) {
 			res.Timestamp = timestamp
 			result = append(result, res)
 		default:
-			fmt.Errorf("Uknown sidecar type '%v' for shortcode '%s'", typeName, shortCode)
+			log.Errorf("Uknown sidecar type '%v' for shortcode '%s'", typeName, shortCode)
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/lepinkainen/instafetch/worker"
+	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 )
 
@@ -13,7 +14,7 @@ func getNextPage(id int64, cursor string) (gjson.Result, error) {
 
 	bytes, err := worker.GetPage(url)
 	if err != nil {
-		fmt.Errorf("Error when fetching media page: %v", err)
+		log.Errorf("Error when fetching media page: %v", err)
 		return gjson.Result{}, err
 	}
 
@@ -26,7 +27,7 @@ func getPageJSON(shortcode string) (gjson.Result, error) {
 
 	bytes, err := worker.GetPage(url)
 	if err != nil {
-		fmt.Errorf("Error when fetching media page: %v", err)
+		log.Errorf("Error when fetching media page: %v", err)
 		return gjson.Result{}, err
 	}
 

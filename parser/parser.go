@@ -49,7 +49,7 @@ func getRootPage(username string) (gjson.Result, error) {
 
 	bytes, err := worker.GetPage(url)
 	if err != nil {
-		fmt.Errorf("Error when fetching media page: %v", err)
+		log.Errorf("Error when fetching media page: %v", err)
 		return gjson.Result{}, err
 	}
 
@@ -62,7 +62,7 @@ func ParseUser(username string, settings Settings) (User, error) {
 	myLog.Infof("Starting parse")
 	page, err := getRootPage(username)
 	if err != nil {
-		fmt.Errorf("Unable to get root page for user %s: %v", username, err)
+		log.Errorf("Unable to get root page for user %s: %v", username, err)
 		return User{}, err
 	}
 
@@ -102,7 +102,7 @@ func parseStream(user User, cursor string) (User, error) {
 		var err error
 		user, err = parseStream(user, newCursor)
 		if err != nil {
-			fmt.Errorf("Error parsing stream: %v", err)
+			log.Errorf("Error parsing stream: %v", err)
 			return user, err
 		}
 	}
@@ -166,7 +166,7 @@ func parseFirstPage(userRoot gjson.Result) (User, bool, string, error) {
 func parseGraphVideo(shortCode string) (Node, error) {
 	root, err := getPageJSON(shortCode)
 	if err != nil {
-		fmt.Errorf("Error fetching video page %s, %v", shortCode, err)
+		log.Errorf("Error fetching video page %s, %v", shortCode, err)
 		return Node{}, err
 	}
 	node := root.Get("graphql.shortcode_media")
@@ -189,7 +189,7 @@ func parseGraphVideo(shortCode string) (Node, error) {
 func parseGraphImage(shortCode string) (Node, error) {
 	root, err := getPageJSON(shortCode)
 	if err != nil {
-		fmt.Errorf("Error fetching image page %s, %v", shortCode, err)
+		log.Errorf("Error fetching image page %s, %v", shortCode, err)
 		return Node{}, err
 	}
 	node := root.Get("graphql.shortcode_media")
