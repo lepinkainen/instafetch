@@ -1,13 +1,20 @@
-package main
+package parser
 
 import (
 	"fmt"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 
 	"github.com/lepinkainen/instafetch/worker"
 )
+
+// Settings defines the options for the downloaders
+type Settings struct {
+	LatestOnly bool
+	Silent     bool
+}
 
 // User represents a single instagram user with their media nodes
 type User struct {
@@ -36,32 +43,6 @@ var (
 	nextPageURL = "https://www.instagram.com/graphql/query/?query_id=17888483320059182&id=%d&first=100&after=%s" // userid + cursor
 )
 
-// Return a stream page as a gjson.Result
-func getNextPage(id int64, cursor string) (gjson.Result, error) {
-	var url = fmt.Sprintf(nextPageURL, id, cursor)
-
-	bytes, err := worker.GetPage(url)
-	if err != nil {
-		fmt.Errorf("Error when fetching media page: %v", err)
-		return gjson.Result{}, err
-	}
-
-	return gjson.ParseBytes(bytes), nil
-}
-
-// Fetch a single media by shortcode
-func getPageJSON(shortcode string) (gjson.Result, error) {
-	var url = fmt.Sprintf(mediaURL, shortcode)
-
-	bytes, err := worker.GetPage(url)
-	if err != nil {
-		fmt.Errorf("Error when fetching media page: %v", err)
-		return gjson.Result{}, err
-	}
-
-	return gjson.ParseBytes(bytes), nil
-}
-
 // Fetch the user's root page
 func getRootPage(username string) (gjson.Result, error) {
 	var url = fmt.Sprintf(userPageURL, username)
@@ -76,8 +57,9 @@ func getRootPage(username string) (gjson.Result, error) {
 }
 
 // ParseUser returns an User struct with all of the user's media
-func ParseUser(username string) (User, error) {
-
+func ParseUser(username string, settings Settings) (User, error) {
+	myLog := log.WithField("username", username)
+	myLog.Infof("Starting parse")
 	page, err := getRootPage(username)
 	if err != nil {
 		fmt.Errorf("Unable to get root page for user %s: %v", username, err)
@@ -88,15 +70,19 @@ func ParseUser(username string) (User, error) {
 
 	user, hasNext, cursor, _ := parseFirstPage(userRoot)
 
+	myLog.Infof("First page parsed")
 	// User has more than one page of content
-	if hasNext {
+	if hasNext && !settings.LatestOnly {
 		user, _ = parseStream(user, cursor)
 	}
+	myLog.Infof("Parsing done")
 	return user, nil
 }
 
 // Recursively parse all of an users pages
 func parseStream(user User, cursor string) (User, error) {
+	myLog := log.WithField("username", user.Username)
+
 	root, _ := getNextPage(user.ID, cursor)
 	mediaRoot := root.Get("data.user.edge_owner_to_timeline_media")
 
@@ -111,10 +97,12 @@ func parseStream(user User, cursor string) (User, error) {
 
 	// recurse downwards if there are more pages
 	if hasNext {
+		myLog.Infof("Parsing next page (%d nodes parsed)", len(user.Nodes))
+
 		var err error
 		user, err = parseStream(user, newCursor)
 		if err != nil {
-			fmt.Errorf("ERror parsing stream: %v", err)
+			fmt.Errorf("Error parsing stream: %v", err)
 			return user, err
 		}
 	}
@@ -131,8 +119,12 @@ func parseEdges(pageMedia gjson.Result) []Node {
 		shortCode := node.Get("node.shortcode").Str
 
 		switch typeName {
-		case "GraphImage":
+		// This needlessly fetches the whole separate json response for a single image
+		case "GraphImage_full":
 			res, _ := parseGraphImage(shortCode)
+			result = append(result, res)
+		case "GraphImage":
+			res, _ := parseGraphImageNode(node)
 			result = append(result, res)
 		case "GraphVideo":
 			res, _ := parseGraphVideo(shortCode)
@@ -214,50 +206,17 @@ func parseGraphImage(shortCode string) (Node, error) {
 	return result, nil
 }
 
-// Parse a GraphSidecar image
-func parseSidecarImage(node gjson.Result) (Node, error) {
+func parseGraphImageNode(node gjson.Result) (Node, error) {
+	node = node.Get("node")
 
 	result := Node{}
 	result.URL = node.Get("display_url").Str
+
 	result.MediaType = node.Get("__typename").Str
 	result.Shortcode = node.Get("shortcode").Str
 	result.IsVideo = node.Get("is_video").Bool()
+	result.Timestamp = time.Unix(node.Get("taken_at_timestamp").Int(), 0)
+	result.Likes = node.Get("edge_media_preview_like.count").Int()
 
 	return result, nil
-}
-
-// Fetch and parse a GraphSidecar node
-func parseGraphSidecar(shortCode string) ([]Node, error) {
-	root, err := getPageJSON(shortCode)
-	if err != nil {
-		fmt.Errorf("Error fetching sidecar page %s, %v", shortCode, err)
-		return []Node{}, err
-	}
-	node := root.Get("graphql.shortcode_media")
-
-	result := []Node{}
-
-	nodes := node.Get("edge_sidecar_to_children.edges")
-
-	// Go through the nodes
-	for _, node := range nodes.Array() {
-		typeName := node.Get("node.__typename").Str
-		shortCode := node.Get("node.shortcode").Str
-
-		switch typeName {
-		case "GraphImage":
-			res, _ := parseSidecarImage(node.Get("node"))
-			result = append(result, res)
-		default:
-			fmt.Errorf("Uknown sidecar type '%v' for shortcode '%s'", typeName, shortCode)
-		}
-	}
-
-	return result, nil
-}
-
-func main() {
-	user, _ := ParseUser("lepinkainen")
-
-	fmt.Printf("Media count: %d", len(user.Nodes))
 }
