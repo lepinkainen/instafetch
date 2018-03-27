@@ -19,6 +19,17 @@ func parseSidecarImage(node gjson.Result) (Node, error) {
 	return result, nil
 }
 
+func parseSidecarVideo(node gjson.Result) (Node, error) {
+	result := Node{}
+	result.URL = node.Get("video_url").Str
+	result.MediaType = node.Get("__typename").Str
+	result.Shortcode = node.Get("shortcode").Str
+	result.IsVideo = node.Get("is_video").Bool()
+	result.ViewCount = node.Get("video_view_count").Int()
+
+	return result, nil
+}
+
 // Fetch and parse a GraphSidecar node
 func parseGraphSidecar(shortCode string) ([]Node, error) {
 	root, err := getPageJSON(shortCode)
@@ -42,6 +53,11 @@ func parseGraphSidecar(shortCode string) ([]Node, error) {
 		switch typeName {
 		case "GraphImage":
 			res, _ := parseSidecarImage(node.Get("node"))
+			// sidecars don't have separate timestamps, use the root's time
+			res.Timestamp = timestamp
+			result = append(result, res)
+		case "GraphVideo":
+			res, _ := parseSidecarVideo(node.Get("node"))
 			// sidecars don't have separate timestamps, use the root's time
 			res.Timestamp = timestamp
 			result = append(result, res)
