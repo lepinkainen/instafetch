@@ -62,7 +62,7 @@ func ParseUser(username string, settings Settings) (User, error) {
 	myLog.Infof("Starting parse")
 	page, err := getRootPage(username)
 	if err != nil {
-		log.Errorf("Unable to get root page for user %s: %v", username, err)
+		myLog.Errorf("Unable to get root page for user %s: %v", username, err)
 		return User{}, err
 	}
 
@@ -102,7 +102,7 @@ func parseStream(user User, cursor string) (User, error) {
 		var err error
 		user, err = parseStream(user, newCursor)
 		if err != nil {
-			log.Errorf("Error parsing stream: %v", err)
+			myLog.Errorf("Error parsing stream: %v", err)
 			return user, err
 		}
 	}
@@ -133,7 +133,7 @@ func parseEdges(pageMedia gjson.Result) []Node {
 			results, _ := parseGraphSidecar(shortCode)
 			result = append(result, results...)
 		default:
-			fmt.Println("unknown media type")
+			log.Errorf("Uknown sidecar type '%v' for shortcode '%s'", typeName, shortCode)
 		}
 	}
 

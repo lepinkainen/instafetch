@@ -95,16 +95,16 @@ func init() {
 	log.SetFormatter(formatter)
 
 	log.SetOutput(os.Stdout)
+}
+
+func main() {
+	flag.Parse()
 
 	if *cron {
 		log.SetLevel(log.WarnLevel)
 	} else {
 		log.SetLevel(log.InfoLevel)
 	}
-}
-
-func main() {
-	flag.Parse()
 
 	// check for required variables
 	if *userName == "" && !*update {
@@ -148,9 +148,7 @@ func main() {
 	}()
 
 	if *update {
-		if !*cron {
-			fmt.Println("Updating all existing sets")
-		}
+		log.Infoln("Updating all existing sets")
 
 		// multiple accounts
 		// loop through directories in output and assume each is an userID
@@ -168,7 +166,5 @@ func main() {
 
 	wgParsing.Wait()
 
-	if !*cron {
-		log.Info("Downloads done")
-	}
+	log.Info("Downloads done")
 }
