@@ -32,5 +32,5 @@ before_script:
 script:
   #- test -z $(gofmt -s -l $GO_FILES)  # Fail if a .go file hasn't been formatted with gofmt
   - go test -v -race $PKGS            # Run all the tests with the race detector enabled
-  - gometalinter.v2 --vendor ./...
+  - gometalinter.v2 --vendor -D gas -D errcheck -D gocyclo ./...
 

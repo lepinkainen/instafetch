@@ -40,7 +40,10 @@ func downloadFile(user parser.User, item parser.Node, outputFolder string) error
 	var filename string
 
 	// create download dir for the account
-	os.MkdirAll(path.Join(outputFolder, user.Username), 0766)
+	err := os.MkdirAll(path.Join(outputFolder, user.Username), 0700)
+	if err != nil {
+		panic(err.Error())
+	}
 
 	url, err := url.Parse(item.URL)
 	if err != nil {
@@ -57,7 +60,7 @@ func downloadFile(user parser.User, item parser.Node, outputFolder string) error
 
 	// Create output file and check for its existence at the same time - no race conditions
 	// from: https://groups.google.com/d/msg/golang-nuts/Ayx-BMNdMFo/IVTRVqMECw8J
-	out, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
+	out, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if os.IsExist(err) {
 		log.Debugf("Already downloaded: %s", filename)
 		return nil
@@ -139,10 +142,16 @@ func main() {
 	go func() {
 		defer wgParsing.Done()
 		for uname := range users {
-			user, _ := parser.ParseUser(uname, settings)
+			user, err := parser.ParseUser(uname, settings)
+			if err != nil {
+				log.Errorf("Error parsing user page: %v", err)
+			}
 
 			for _, node := range user.Nodes {
-				downloadFile(user, node, outDir)
+				err := downloadFile(user, node, outDir)
+				if err != nil {
+					log.Errorf("Error downloading file: %v", err)
+				}
 			}
 		}
 	}()
@@ -152,7 +161,10 @@ func main() {
 
 		// multiple accounts
 		// loop through directories in output and assume each is an userID
-		files, _ := ioutil.ReadDir(outDir)
+		files, err := ioutil.ReadDir(outDir)
+		if err != nil {
+			panic(err.Error())
+		}
 		for _, f := range files {
 			if f.IsDir() {
 				users <- f.Name()
